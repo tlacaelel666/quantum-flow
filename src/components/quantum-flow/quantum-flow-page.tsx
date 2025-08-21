@@ -32,10 +32,6 @@ export default function QuantumFlowPage() {
     try {
       const results = await getSimulation(config);
       setSimulationResults(results);
-      toast({
-        title: "Simulación Completa",
-        description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
-      });
     } catch (error) {
       console.error(error);
       toast({
@@ -62,16 +58,14 @@ export default function QuantumFlowPage() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(2048, 1, 1);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-        let pcmData: number[] = [];
-        let rawData: number[] = [];
+        const pcmData: number[] = [];
         
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < inputData.length; i++) {
                 pcmData.push(inputData[i]);
-                rawData.push(inputData[i]);
             }
         };
 
@@ -82,6 +76,7 @@ export default function QuantumFlowPage() {
             source.disconnect();
             processor.disconnect();
             stream.getTracks().forEach(track => track.stop());
+            const rawData = pcmData.slice(); // a copy for raw data analysis
             setTimeout(() => audioContext.close(), 500);
             resolve({ pcmData, rawData });
         }, 2000); // Record for 2 seconds
@@ -101,7 +96,7 @@ export default function QuantumFlowPage() {
         toast({ title: "Procesando Calibración..."});
 
         setIsSimulating(true);
-        const audioPayload = { pcmData, rawData, referenceState: referenceState.current };
+        const audioPayload = { pcmData, rawData };
         const results = await getAcousticSimulation(config, audioPayload);
         
         if (results.referenceState) {
@@ -137,8 +132,8 @@ export default function QuantumFlowPage() {
         toast({ title: "Procesando simulación acústica..." });
         
         setIsSimulating(true);
-        const audioPayload = { pcmData, rawData, referenceState: referenceState.current };
-        const results = await getAcousticSimulation(config, audioPayload);
+        const audioPayload = { pcmData, rawData };
+        const results = await getAcousticSimulation(config, audioPayload, referenceState.current);
         setSimulationResults(results);
         toast({
           title: "Simulación Acústica Completa",

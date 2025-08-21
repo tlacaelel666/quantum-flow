@@ -1,6 +1,6 @@
 import type { CircuitConfig, SimulationResults, ReferenceState } from './types';
 import FFT from 'fft.js';
-import { extractMLFeatures, calculateMahalanobisDistance, FEATURE_VECTOR_SIZE } from './audio-features';
+import { extractMLFeatures, calculateMahalanobisDistance, calculateSpectralFlux, FEATURE_VECTOR_SIZE } from './audio-features';
 
 function _calculate_statistics(counts: Record<number, number>, shots: number) {
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -45,6 +45,12 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
         const lastKey = keys[keys.length - 1];
         if (lastKey !== undefined && totalShots > totalScaledShots) {
             finalCounts[lastKey] = totalShots - totalScaledShots;
+        } else if (totalShots > totalScaledShots) {
+            // If last key was 0 and we still have shots, distribute them somewhere
+            const firstKey = keys[0];
+            if (firstKey !== undefined) {
+                 finalCounts[firstKey] = (finalCounts[firstKey] || 0) + (totalShots - totalScaledShots);
+            }
         }
     }
 
@@ -55,8 +61,9 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
     return cleanedCounts;
 }
 
+let previousAmplitudes: number[] = [];
 
-export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[], referenceState: ReferenceState }): Promise<SimulationResults> {
+export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[] }, referenceState?: ReferenceState): Promise<SimulationResults> {
     const logs: string[] = [];
     logs.push(`[INFO] QUOREMIND session started at ${new Date().toISOString()}`);
     logs.push(`[INFO] Starting acoustic simulation for ${config.circuit_type} circuit.`);
@@ -81,27 +88,37 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
 
     // 3. Extract ML Features using the new advanced functions
     const sampleRate = 44100; // Assume a standard sample rate
-    const mlFeatures = extractMLFeatures(magnitudes, audioData.rawData, [], sampleRate);
+    const mlFeatures = extractMLFeatures(magnitudes, audioData.rawData, previousAmplitudes, sampleRate);
     
     let returnedReferenceState: ReferenceState | undefined = undefined;
-
-    if (!audioData.referenceState.initialized) {
+    let distance = 0;
+    
+    if (referenceState && !referenceState.initialized) {
         // This is the calibration run
         logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
         // Simplified covariance: for calibration, just store variance
-        const variance = mlFeatures.map(f => f * f); 
+        const mean = mlFeatures;
+        const variance = mlFeatures.map((val, i) => {
+            const diff = val - mean[i];
+            return diff * diff;
+        });
         returnedReferenceState = {
-            mean: mlFeatures,
+            mean: mean,
             covariance: variance, 
             initialized: true
         };
         logs.push(`[DATA] Stored Mean Vector: ${JSON.stringify(returnedReferenceState.mean.map(f => f.toFixed(4)))}`);
         logs.push(`[DATA] Stored Variance Vector: ${JSON.stringify(returnedReferenceState.covariance.map(f => f.toFixed(4)))}`);
 
+    } else if (referenceState && referenceState.initialized) {
+        distance = calculateMahalanobisDistance(mlFeatures, referenceState);
+        logs.push(`[INFO] Mahalanobis Distance to reference: ${distance.toFixed(4)}`);
     }
 
-    const distance = calculateMahalanobisDistance(mlFeatures, audioData.referenceState);
-    logs.push(`[INFO] Mahalanobis Distance to reference: ${distance.toFixed(4)}`);
+    const spectralFlux = calculateSpectralFlux(magnitudes, previousAmplitudes);
+    previousAmplitudes = magnitudes;
+    logs.push(`[INFO] Spectral Flux: ${spectralFlux.toFixed(4)}`);
+
     logs.push(`[INFO] Extracted ML Feature Vector:`);
     logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
     
