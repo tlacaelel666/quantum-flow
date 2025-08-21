@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Banner from "./banner";
 import ConfigPanel from "./config-panel";
 import OutputPanel from "./output-panel";
@@ -16,7 +16,11 @@ export default function QuantumFlowPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const { toast } = useToast();
 
+  // Store the latest config from the form
+  const latestConfig = useRef<CircuitConfig | null>(null);
+
   const handleSimulate = async (config: CircuitConfig) => {
+    latestConfig.current = config;
     setIsSimulating(true);
     setSimulationResults(null);
     setAiAnalysis(null);
@@ -39,7 +43,16 @@ export default function QuantumFlowPage() {
     }
   };
 
-  const handleAcousticSimulate = async (config: CircuitConfig) => {
+  const handleAcousticSimulate = async () => {
+    if (!latestConfig.current) {
+        toast({
+            variant: "destructive",
+            title: "Configuración no encontrada",
+            description: "Por favor, completa la configuración del formulario primero.",
+        });
+        return;
+    }
+
     setIsRecording(true);
     setSimulationResults(null);
     setAiAnalysis(null);
@@ -71,7 +84,7 @@ export default function QuantumFlowPage() {
             toast({ title: "Procesando simulación acústica..." });
             
             setIsSimulating(true);
-            const results = await getAcousticSimulation(config, audioData);
+            const results = await getAcousticSimulation(latestConfig.current!, audioData);
             setSimulationResults(results);
             toast({
               title: "Simulación Acústica Completa",
@@ -122,40 +135,12 @@ export default function QuantumFlowPage() {
     }
   };
 
-  const formRef = React.useRef<{ getValues: () => CircuitConfig }>(null);
-
-  const handleSimulateWrapper = (config: CircuitConfig) => {
-      if (config.circuit_type === 'acoustic') {
-          handleAcousticSimulate(config);
-      } else {
-          handleSimulate(config);
-      }
-  };
-
-
   return (
     <div className="space-y-8">
       <Banner />
       <ConfigPanel 
         onSimulate={handleSimulate}
-        onAcousticSimulate={() => {
-            // This is a bit of a hack to get the form values out.
-            // A better solution would involve lifting state up.
-            const form = document.querySelector('form');
-            if(form) {
-                const formData = new FormData(form);
-                const values = Object.fromEntries(formData.entries());
-                const config: CircuitConfig = {
-                    circuit_type: values.circuit_type as string,
-                    num_qubits: Number(values.num_qubits),
-                    depth: Number(values.depth),
-                    shots: Number(values.shots),
-                    noise_level: Number(values.noise_level),
-                    verbose: values.verbose === 'on',
-                };
-                handleAcousticSimulate(config);
-            }
-        }}
+        onAcousticSimulate={handleAcousticSimulate}
         isLoading={isSimulating}
         isRecording={isRecording}
       />
