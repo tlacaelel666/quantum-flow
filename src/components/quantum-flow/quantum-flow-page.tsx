@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from "react";
-import { useFormContext } from "react-hook-form";
+import React, { useState } from "react";
+import { useForm } from "react-hook-form";
 import Banner from "./banner";
 import ConfigPanel from "./config-panel";
 import OutputPanel from "./output-panel";
@@ -22,19 +22,12 @@ export default function QuantumFlowPage() {
     setSimulationResults(null);
     setAiAnalysis(null);
     try {
-      if (config.circuit_type === 'acoustic') {
-        // This path is now handled by the form's submit button logic
-        // which calls handleAcousticSimulate directly.
-        // We add a fallback here just in case.
-        await handleAcousticSimulate(config);
-      } else {
-        const results = await getSimulation(config);
-        setSimulationResults(results);
-        toast({
-          title: "Simulación Completa",
-          description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
-        });
-      }
+      const results = await getSimulation(config);
+      setSimulationResults(results);
+      toast({
+        title: "Simulación Completa",
+        description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
+      });
     } catch (error) {
       console.error(error);
       toast({
@@ -51,23 +44,22 @@ export default function QuantumFlowPage() {
     setIsRecording(true);
     setSimulationResults(null);
     setAiAnalysis(null);
-    toast({ title: "Grabando audio...", description: "Por favor, haz algo de ruido." });
+    toast({ title: "Grabando audio...", description: "Por favor, haz algo de ruido durante 2 segundos." });
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
-        // Use a smaller buffer size for lower latency processing
         const processor = audioContext.createScriptProcessor(2048, 1, 1);
 
         let pcmData: number[] = [];
-        let rawData: number[] = [];
+        let rawData: number[] = []; // rawData for ZCR
         
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < inputData.length; i++) {
                 pcmData.push(inputData[i]);
-                rawData.push(inputData[i]); // Store raw PCM for ZCR
+                rawData.push(inputData[i]);
             }
         };
 
@@ -75,11 +67,10 @@ export default function QuantumFlowPage() {
         processor.connect(audioContext.destination);
 
         setTimeout(async () => {
-            source.disconnect(processor);
-            processor.disconnect(audioContext.destination);
+            source.disconnect();
+            processor.disconnect();
             stream.getTracks().forEach(track => track.stop());
             
-            // It's better to close the context after a short delay
             setTimeout(() => audioContext.close(), 500);
 
             setIsRecording(false);

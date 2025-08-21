@@ -81,9 +81,11 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
 
     // 3. Extract ML Features using the new advanced functions
     try {
-        const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5)); // Assuming PCM is -1 to 1
-        // For now, previousAmplitudes is empty on first run.
-        const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], audioData.pcmData.length * 2); // Approximation of sample rate
+        // Correctly convert rawData from [-1, 1] float to [0, 255] Uint8
+        const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5));
+        // For now, previousAmplitudes is empty on first run. A real implementation might store state.
+        const sampleRate = 44100; // Assume a standard sample rate, as browser might not provide it easily.
+        const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], sampleRate);
         logs.push(`[INFO] Extracted ML Feature Vector:`);
         logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
     } catch(e) {
