@@ -24,15 +24,15 @@ export default function QuantumFlowPage() {
       const results = await runSimulation(config);
       setSimulationResults(results);
       toast({
-        title: "Simulation Complete",
-        description: `Successfully ran ${config.circuit_type} circuit.`,
+        title: "Simulación Completa",
+        description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
       });
     } catch (error) {
       console.error(error);
       toast({
         variant: "destructive",
-        title: "Simulation Failed",
-        description: "An error occurred during the simulation.",
+        title: "Falló la Simulación",
+        description: "Ocurrió un error durante la simulación.",
       });
     } finally {
       setIsSimulating(false);
@@ -43,8 +43,8 @@ export default function QuantumFlowPage() {
     if (!simulationResults) {
       toast({
         variant: "destructive",
-        title: "No Results",
-        description: "Please run a simulation before requesting analysis.",
+        title: "No Hay Resultados",
+        description: "Por favor, ejecuta una simulación antes de solicitar un análisis.",
       });
       return;
     }
@@ -53,15 +53,15 @@ export default function QuantumFlowPage() {
       const analysis = await getAnalysis(simulationResults);
       setAiAnalysis(analysis);
       toast({
-        title: "AI Analysis Complete",
-        description: "Suggestions are available in the AI Analysis tab.",
+        title: "Análisis con IA Completo",
+        description: "Las sugerencias están disponibles en la pestaña de Análisis de IA.",
       });
     } catch (error) {
       console.error(error);
       toast({
         variant: "destructive",
-        title: "AI Analysis Failed",
-        description: "Could not get analysis from the AI model.",
+        title: "Falló el Análisis con IA",
+        description: "No se pudo obtener el análisis del modelo de IA.",
       });
     } finally {
       setIsAiLoading(false);

@@ -16,14 +16,14 @@ function TextView({ results, onDownloadCsv }: { results: SimulationResults, onDo
   return (
     <div className="font-code text-sm space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <div><strong className="text-accent">Circuit Type:</strong> {circuit_type}</div>
-        <div><strong className="text-accent">Qubits:</strong> {num_qubits}</div>
-        <div><strong className="text-accent">Depth:</strong> {circuit_depth}</div>
-        <div><strong className="text-accent">Shots:</strong> {shots}</div>
-        <div><strong className="text-accent">Noise:</strong> {noise_level.toFixed(2)}</div>
+        <div><strong className="text-accent">Tipo de Circuito:</strong> {circuit_type}</div>
+        <div><strong className="text-accent">Cúbits:</strong> {num_qubits}</div>
+        <div><strong className="text-accent">Profundidad:</strong> {circuit_depth}</div>
+        <div><strong className="text-accent">Disparos (Shots):</strong> {shots}</div>
+        <div><strong className="text-accent">Ruido:</strong> {noise_level.toFixed(2)}</div>
       </div>
       
-      <h3 className="font-headline text-lg text-primary">Statistics</h3>
+      <h3 className="font-headline text-lg text-primary">Estadísticas</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {Object.entries(statistics).map(([key, value]) => (
               <div key={key} className="bg-muted/50 p-2 rounded-md">
@@ -34,8 +34,8 @@ function TextView({ results, onDownloadCsv }: { results: SimulationResults, onDo
       </div>
 
       <div className="flex justify-between items-center">
-        <h3 className="font-headline text-lg text-primary">Counts</h3>
-        <Button variant="outline" size="sm" onClick={onDownloadCsv}><Download className="mr-2 h-4 w-4" />Download CSV</Button>
+        <h3 className="font-headline text-lg text-primary">Conteos</h3>
+        <Button variant="outline" size="sm" onClick={onDownloadCsv}><Download className="mr-2 h-4 w-4" />Descargar CSV</Button>
       </div>
       <div className="bg-muted/50 p-4 rounded-md max-h-60 overflow-y-auto">
         {Object.entries(counts).map(([state, count]) => {
@@ -66,7 +66,7 @@ function AiAnalysisView({ analysis, isLoading }: { analysis: string | null, isLo
       </div>
     );
   }
-  if (!analysis) return <div className="text-center text-muted-foreground">Run a simulation and then click "Analyze with AI" to see results here.</div>;
+  if (!analysis) return <div className="text-center text-muted-foreground">Ejecuta una simulación y luego haz clic en "Analizar con IA" para ver los resultados aquí.</div>;
   
   return (
     <div className="prose prose-invert prose-sm max-w-none">
@@ -107,7 +107,7 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
             <div className="text-primary">
               <Sparkles className="h-10 w-10 animate-spin" />
             </div>
-            <p className="font-headline text-lg">Running Quantum Simulation...</p>
+            <p className="font-headline text-lg">Ejecutando Simulación Cuántica...</p>
             <Skeleton className="h-4 w-64" />
           </div>
         </CardContent>
@@ -121,7 +121,7 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
         <CardContent className="p-6">
           <div className="flex flex-col items-center justify-center h-48">
             <p className="text-muted-foreground text-center">
-              Configure your simulation parameters above and click "Run Simulation" to see the results.
+              Configura tus parámetros de simulación arriba y haz clic en "Ejecutar Simulación" para ver los resultados.
             </p>
           </div>
         </CardContent>
@@ -143,28 +143,28 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
        <CardHeader>
         <div className="flex justify-between items-start">
             <div>
-                <CardTitle className="font-headline text-2xl">Output Terminal</CardTitle>
-                <CardDescription>View simulation results, analysis, and logs.</CardDescription>
+                <CardTitle className="font-headline text-2xl">Terminal de Salida</CardTitle>
+                <CardDescription>Visualiza los resultados de la simulación, análisis y registros.</CardDescription>
             </div>
             <Button onClick={onAnalyze} disabled={isAiLoading}>
                 <BrainCircuit className="mr-2 h-4 w-4" />
-                {isAiLoading ? "Analyzing..." : "Analyze with AI"}
+                {isAiLoading ? "Analizando..." : "Analizar con IA"}
             </Button>
         </div>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="simulation">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="simulation"><FileText className="mr-2 h-4 w-4"/>Simulation</TabsTrigger>
-            <TabsTrigger value="ai-analysis"><BrainCircuit className="mr-2 h-4 w-4"/>AI Analysis</TabsTrigger>
-            <TabsTrigger value="logs"><List className="mr-2 h-4 w-4"/>Logs</TabsTrigger>
+            <TabsTrigger value="simulation"><FileText className="mr-2 h-4 w-4"/>Simulación</TabsTrigger>
+            <TabsTrigger value="ai-analysis"><BrainCircuit className="mr-2 h-4 w-4"/>Análisis IA</TabsTrigger>
+            <TabsTrigger value="logs"><List className="mr-2 h-4 w-4"/>Registros</TabsTrigger>
           </TabsList>
           
           <TabsContent value="simulation" className="mt-4">
             <Tabs defaultValue="text" className="w-full">
                 <TabsList>
-                    <TabsTrigger value="text"><FileText className="mr-2 h-4 w-4" />Text</TabsTrigger>
-                    <TabsTrigger value="plot"><BarChartBig className="mr-2 h-4 w-4" />Plot</TabsTrigger>
+                    <TabsTrigger value="text"><FileText className="mr-2 h-4 w-4" />Texto</TabsTrigger>
+                    <TabsTrigger value="plot"><BarChartBig className="mr-2 h-4 w-4" />Gráfico</TabsTrigger>
                     <TabsTrigger value="json"><Code className="mr-2 h-4 w-4" />JSON</TabsTrigger>
                 </TabsList>
                 <TabsContent value="text" className="mt-4"><TextView results={results} onDownloadCsv={handleDownloadCsv} /></TabsContent>
