@@ -7,6 +7,12 @@ export interface CircuitConfig {
   verbose: boolean;
 }
 
+export interface ReferenceState {
+  mean: number[];
+  covariance: number[] | null;
+  initialized: boolean;
+}
+
 export interface SimulationResults {
   counts: Record<number, number>;
   num_qubits: number;
@@ -21,4 +27,5 @@ export interface SimulationResults {
     distribution_uniformity: number;
   };
   logs: string[];
+  referenceState?: ReferenceState;
 }

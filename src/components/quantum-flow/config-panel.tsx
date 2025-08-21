@@ -28,6 +28,8 @@ type ConfigPanelProps = {
   onAcousticSimulate: (config: CircuitConfig) => void;
   isLoading: boolean;
   isRecording: boolean;
+  isCalibrating: boolean;
+  isCalibrated: boolean;
 };
 
 const circuitDescriptions: Record<string, { title: string, description: string, parameters: string } | null> = {
@@ -63,7 +65,7 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
   },
 };
 
-export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording }: ConfigPanelProps) {
+export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording, isCalibrating, isCalibrated }: ConfigPanelProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -82,6 +84,14 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
     } else {
       onSimulate(values);
     }
+  }
+  
+  const getAcousticButtonText = () => {
+    if (isCalibrating) return "Calibrando...";
+    if (isRecording) return "Grabando...";
+    if (isLoading) return "Simulando...";
+    if (!isCalibrated) return "Calibrar Micrófono";
+    return "Grabar y Simular";
   }
 
   const circuitType = form.watch('circuit_type');
@@ -213,11 +223,11 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
               )}
             />
             
-            <Button type="submit" className="w-full" disabled={isLoading || isRecording}>
+            <Button type="submit" className="w-full" disabled={isLoading || isRecording || isCalibrating}>
               {circuitType === 'acoustic' ? (
                 <>
                   <Mic className="mr-2 h-4 w-4" />
-                  {isRecording ? "Grabando..." : (isLoading ? "Simulando..." : "Grabar y Simular")}
+                  {getAcousticButtonText()}
                 </>
               ) : (
                 <>

@@ -1,6 +1,6 @@
-import type { CircuitConfig, SimulationResults } from './types';
+import type { CircuitConfig, SimulationResults, ReferenceState } from './types';
 import FFT from 'fft.js';
-import { extractMLFeatures } from './audio-features';
+import { extractMLFeatures, calculateMahalanobisDistance } from './audio-features';
 
 function _calculate_statistics(counts: Record<number, number>, shots: number) {
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -56,7 +56,7 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
 }
 
 
-export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[] }): Promise<SimulationResults> {
+export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[], referenceState: ReferenceState }): Promise<SimulationResults> {
     const logs: string[] = [];
     logs.push(`[INFO] QUOREMIND session started at ${new Date().toISOString()}`);
     logs.push(`[INFO] Starting acoustic simulation for ${config.circuit_type} circuit.`);
@@ -80,21 +80,29 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
     }
 
     // 3. Extract ML Features using the new advanced functions
-    try {
-        // Correctly convert rawData from [-1, 1] float to [0, 255] Uint8
-        const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5));
-        // For now, previousAmplitudes is empty on first run. A real implementation might store state.
-        const sampleRate = 44100; // Assume a standard sample rate, as browser might not provide it easily.
-        const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], sampleRate);
-        logs.push(`[INFO] Extracted ML Feature Vector:`);
-        logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
-    } catch(e) {
-        if (e instanceof Error) {
-            logs.push(`[ERROR] Could not extract ML features: ${e.message}`);
-        }
+    const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5));
+    const sampleRate = 44100; // Assume a standard sample rate
+    const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], sampleRate);
+    
+    let returnedReferenceState: ReferenceState | undefined = undefined;
+
+    if (!audioData.referenceState.initialized) {
+        // This is the calibration run
+        logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
+        returnedReferenceState = {
+            mean: mlFeatures,
+            // Initialize covariance with variance (simplified)
+            covariance: mlFeatures.map(() => 1), // Start with unit variance
+            initialized: true
+        };
+        logs.push(`[DATA] Stored Mean Vector: ${JSON.stringify(returnedReferenceState.mean.map(f => f.toFixed(4)))}`);
     }
 
-
+    const distance = calculateMahalanobisDistance(mlFeatures, audioData.referenceState);
+    logs.push(`[INFO] Mahalanobis Distance to reference: ${distance.toFixed(4)}`);
+    logs.push(`[INFO] Extracted ML Feature Vector:`);
+    logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
+    
     // 4. Map features to quantum states
     const numStates = 1 << config.num_qubits;
     const counts: Record<number, number> = {};
@@ -137,6 +145,7 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
         circuit_depth: 1, // Depth is not really applicable here
         statistics: stats,
         logs,
+        referenceState: returnedReferenceState
     };
 }
 
