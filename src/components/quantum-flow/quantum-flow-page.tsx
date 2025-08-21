@@ -16,21 +16,21 @@ export default function QuantumFlowPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const { toast } = useToast();
 
-  // Store the latest config from the form
-  const latestConfig = useRef<CircuitConfig | null>(null);
-
   const handleSimulate = async (config: CircuitConfig) => {
-    latestConfig.current = config;
     setIsSimulating(true);
     setSimulationResults(null);
     setAiAnalysis(null);
     try {
-      const results = await getSimulation(config);
-      setSimulationResults(results);
-      toast({
-        title: "Simulación Completa",
-        description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
-      });
+      if (config.circuit_type === 'acoustic') {
+        await handleAcousticSimulate(config);
+      } else {
+        const results = await getSimulation(config);
+        setSimulationResults(results);
+        toast({
+          title: "Simulación Completa",
+          description: `Se ejecutó exitosamente el circuito ${config.circuit_type}.`,
+        });
+      }
     } catch (error) {
       console.error(error);
       toast({
@@ -43,16 +43,7 @@ export default function QuantumFlowPage() {
     }
   };
 
-  const handleAcousticSimulate = async () => {
-    if (!latestConfig.current) {
-        toast({
-            variant: "destructive",
-            title: "Configuración no encontrada",
-            description: "Por favor, completa la configuración del formulario primero.",
-        });
-        return;
-    }
-
+  const handleAcousticSimulate = async (config: CircuitConfig) => {
     setIsRecording(true);
     setSimulationResults(null);
     setAiAnalysis(null);
@@ -84,7 +75,7 @@ export default function QuantumFlowPage() {
             toast({ title: "Procesando simulación acústica..." });
             
             setIsSimulating(true);
-            const results = await getAcousticSimulation(latestConfig.current!, audioData);
+            const results = await getAcousticSimulation(config, audioData);
             setSimulationResults(results);
             toast({
               title: "Simulación Acústica Completa",
@@ -140,7 +131,7 @@ export default function QuantumFlowPage() {
       <Banner />
       <ConfigPanel 
         onSimulate={handleSimulate}
-        onAcousticSimulate={handleAcousticSimulate}
+        onAcousticSimulate={() => {}} // This is now handled by the form's onSubmit
         isLoading={isSimulating}
         isRecording={isRecording}
       />

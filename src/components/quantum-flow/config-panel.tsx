@@ -25,7 +25,7 @@ const formSchema = z.object({
 
 type ConfigPanelProps = {
   onSimulate: (config: CircuitConfig) => void;
-  onAcousticSimulate: () => void;
+  onAcousticSimulate: (config: CircuitConfig) => void;
   isLoading: boolean;
   isRecording: boolean;
 };
@@ -63,7 +63,7 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
   },
 };
 
-export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording }: ConfigPanelProps) {
+export default function ConfigPanel({ onSimulate, isLoading, isRecording }: ConfigPanelProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -77,11 +77,7 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    if (values.circuit_type === 'acoustic') {
-      onAcousticSimulate();
-    } else {
-      onSimulate(values);
-    }
+    onSimulate(values);
   }
 
   const circuitType = form.watch('circuit_type');
