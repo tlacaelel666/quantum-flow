@@ -1,12 +1,11 @@
 'use server';
 
-import { run } from '@genkit-ai/next';
 import { analyzeCircuit } from '@/ai/flows';
 import { SimulationResults } from '@/lib/types';
 
 export async function getAnalysis(results: SimulationResults) {
   try {
-    return await run(analyzeCircuit, results);
+    return await analyzeCircuit(results);
   } catch (error) {
     console.error("Error running Genkit flow:", error);
     // Provide a helpful error message for the user.
