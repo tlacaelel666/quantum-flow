@@ -166,12 +166,14 @@ export async function runSimulation(config: CircuitConfig): Promise<SimulationRe
     const p00 = 0.5 - config.noise_level * 0.4;
     const p11 = 0.5 - config.noise_level * 0.4;
     counts[0] = Math.round(config.shots * (p00 + (Math.random()-0.5) * 0.1 * config.noise_level));
-    // Bell state is between qubit 0 and 1, not first and last.
-    // The state |11> corresponds to decimal 3.
-    counts[3] = Math.round(config.shots * (p11 + (Math.random()-0.5) * 0.1 * config.noise_level));
+    // The entangled state is between the first and last qubit.
+    const last_qubit_state = 1 << (config.num_qubits - 1);
+    const bell_state = 1 | last_qubit_state;
+    counts[bell_state] = Math.round(config.shots * (p11 + (Math.random()-0.5) * 0.1 * config.noise_level));
+
     if (config.noise_level > 0) {
       counts[1] = Math.round(config.shots * (config.noise_level * 0.4 * Math.random()));
-      counts[2] = Math.round(config.shots * (config.noise_level * 0.4 * Math.random()));
+      counts[last_qubit_state] = Math.round(config.shots * (config.noise_level * 0.4 * Math.random()));
     }
   } else if (config.circuit_type === 'ghz' && config.num_qubits > 0) {
     circuit_depth = config.num_qubits;
@@ -185,6 +187,15 @@ export async function runSimulation(config: CircuitConfig): Promise<SimulationRe
         const noisy_state = Math.floor(Math.random() * ((1 << config.num_qubits) - 2)) + 1;
         counts[noisy_state] = (counts[noisy_state] || 0) + Math.round(remaining_shots / 5);
       }
+    }
+  } else if (config.circuit_type === 'qft' && config.num_qubits > 0) {
+    circuit_depth = config.num_qubits;
+    const num_possible_states = 1 << config.num_qubits;
+    const shots_per_state = Math.floor(config.shots / num_possible_states);
+    for (let i = 0; i < num_possible_states; i++) {
+        // Apply noise by slightly randomizing the counts
+        const noise_effect = Math.round((Math.random() - 0.5) * shots_per_state * config.noise_level * 2);
+        counts[i] = Math.max(0, shots_per_state + noise_effect);
     }
   } else { 
     circuit_depth = config.depth;
