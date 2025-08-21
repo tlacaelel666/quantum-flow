@@ -1,6 +1,6 @@
 import type { CircuitConfig, SimulationResults, ReferenceState } from './types';
 import FFT from 'fft.js';
-import { extractMLFeatures, calculateMahalanobisDistance } from './audio-features';
+import { extractMLFeatures, calculateMahalanobisDistance, FEATURE_VECTOR_SIZE } from './audio-features';
 
 function _calculate_statistics(counts: Record<number, number>, shots: number) {
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -35,7 +35,7 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
     if (currentTotal > 0) {
         const scale = totalShots / currentTotal;
         let totalScaledShots = 0;
-        const keys = Object.keys(counts).map(Number);
+        const keys = Object.keys(counts).map(Number).sort((a,b) => counts[b] - counts[a]); // Sort for precision
         for (let i = 0; i < keys.length - 1; i++) {
             const key = keys[i];
             const scaledCount = Math.round(counts[key] * scale);
@@ -43,7 +43,7 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
             totalScaledShots += scaledCount;
         }
         const lastKey = keys[keys.length - 1];
-        if (lastKey !== undefined) {
+        if (lastKey !== undefined && totalShots > totalScaledShots) {
             finalCounts[lastKey] = totalShots - totalScaledShots;
         }
     }
@@ -80,22 +80,24 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
     }
 
     // 3. Extract ML Features using the new advanced functions
-    const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5));
     const sampleRate = 44100; // Assume a standard sample rate
-    const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], sampleRate);
+    const mlFeatures = extractMLFeatures(magnitudes, audioData.rawData, [], sampleRate);
     
     let returnedReferenceState: ReferenceState | undefined = undefined;
 
     if (!audioData.referenceState.initialized) {
         // This is the calibration run
         logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
+        // Simplified covariance: for calibration, just store variance
+        const variance = mlFeatures.map(f => f * f); 
         returnedReferenceState = {
             mean: mlFeatures,
-            // Initialize covariance with variance (simplified)
-            covariance: mlFeatures.map(() => 1), // Start with unit variance
+            covariance: variance, 
             initialized: true
         };
         logs.push(`[DATA] Stored Mean Vector: ${JSON.stringify(returnedReferenceState.mean.map(f => f.toFixed(4)))}`);
+        logs.push(`[DATA] Stored Variance Vector: ${JSON.stringify(returnedReferenceState.covariance.map(f => f.toFixed(4)))}`);
+
     }
 
     const distance = calculateMahalanobisDistance(mlFeatures, audioData.referenceState);

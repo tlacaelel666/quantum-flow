@@ -63,11 +63,11 @@ export const calculateSpectralFlux = (amplitudes: number[], previousAmplitudes: 
 };
 
 
-const calculateZeroCrossingRate = (rawData: Uint8Array): number => {
+const calculateZeroCrossingRate = (rawData: number[]): number => {
   let crossings = 0;
   for (let i = 1; i < rawData.length; i++) {
-    // rawData is 0-255, so 128 is the zero-crossing point
-    if ((rawData[i] >= 128) !== (rawData[i - 1] >= 128)) {
+    // rawData is -1 to 1, so 0 is the zero-crossing point
+    if ((rawData[i] >= 0) !== (rawData[i - 1] >= 0)) {
       crossings++;
     }
   }
@@ -116,7 +116,7 @@ const calculateSimplifiedMFCC = (amplitudes: number[], sampleRate: number): numb
 };
 
 // EXTRACCIÓN DE CARACTERÍSTICAS ML
-export const extractMLFeatures = (amplitudes: number[], rawData: Uint8Array, previousAmplitudes: number[], sampleRate: number): number[] => {
+export const extractMLFeatures = (amplitudes: number[], rawData: number[], previousAmplitudes: number[], sampleRate: number): number[] => {
   const features: number[] = [];
   
   features.push(calculateSpectralCentroid(amplitudes, sampleRate));
