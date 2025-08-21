@@ -1,4 +1,4 @@
-import type { CircuitConfig, SimulationResults, ReferenceState } from './types';
+import type { CircuitConfig, SimulationResults, ReferenceState, AudioPayload } from './types';
 import FFT from 'fft.js';
 import { extractMLFeatures, calculateMahalanobisDistance, calculateSpectralFlux, FEATURE_VECTOR_SIZE } from './audio-features';
 
@@ -63,11 +63,8 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
 
 let previousAmplitudes: number[] = [];
 
-export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[] }, referenceState?: ReferenceState): Promise<SimulationResults> {
-    const logs: string[] = [];
-    logs.push(`[INFO] QUOREMIND session started at ${new Date().toISOString()}`);
-    logs.push(`[INFO] Starting acoustic simulation for ${config.circuit_type} circuit.`);
-    logs.push(`[INFO] Configuration: ${config.num_qubits} qubits, ${config.shots} shots, noise=${config.noise_level}.`);
+async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPayload, logs: string[], referenceState?: ReferenceState): Promise<{ initialState: Record<number, number>, returnedReferenceState?: ReferenceState }> {
+    logs.push(`[INFO] Starting acoustic processing.`);
     
     // 1. Perform FFT on audio data
     const fftSize = Math.pow(2, Math.ceil(Math.log2(audioData.pcmData.length)));
@@ -94,14 +91,9 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
     let distance = 0;
     
     if (referenceState && !referenceState.initialized) {
-        // This is the calibration run
         logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
-        // Simplified covariance: for calibration, just store variance
         const mean = mlFeatures;
-        const variance = mlFeatures.map((val, i) => {
-            const diff = val - mean[i];
-            return diff * diff;
-        });
+        const variance = mlFeatures.map((val) => val * val); // simplified
         returnedReferenceState = {
             mean: mean,
             covariance: variance, 
@@ -118,20 +110,18 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
     const spectralFlux = calculateSpectralFlux(magnitudes, previousAmplitudes);
     previousAmplitudes = magnitudes;
     logs.push(`[INFO] Spectral Flux: ${spectralFlux.toFixed(4)}`);
-
     logs.push(`[INFO] Extracted ML Feature Vector:`);
     logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
     
     // 4. Map features to quantum states
     const numStates = 1 << config.num_qubits;
-    const counts: Record<number, number> = {};
+    const initialState: Record<number, number> = {};
     const featuresPerState = Math.floor(magnitudes.length / numStates);
 
     if (featuresPerState < 1) {
         logs.push(`[WARN] Not enough frequency data to map to all quantum states. Some states will have 0 probability.`);
     }
 
-    let totalMagnitude = 0;
     for(let i = 0; i < numStates; i++) {
         let stateMagnitude = 0;
         if(featuresPerState > 0) {
@@ -141,35 +131,14 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: { 
         } else if (i < magnitudes.length) {
             stateMagnitude = magnitudes[i];
         }
-        counts[i] = stateMagnitude;
-        totalMagnitude += stateMagnitude;
+        initialState[i] = stateMagnitude;
     }
 
     logs.push(`[INFO] Mapped ${magnitudes.length} frequency bins to ${numStates} quantum states.`);
-
-    // 5. Normalize probabilities and assign shots
-    if (totalMagnitude > 0) {
-        for (const state in counts) {
-            counts[state] = (counts[state] / totalMagnitude) * config.shots;
-        }
-    }
-    
-    const final_counts = _normalizeCounts(counts, config.shots);
-    const stats = _calculate_statistics(final_counts, config.shots);
-    logs.push(`[SUCCESS] Simulation complete. Most frequent state: ${stats.most_frequent_state}.`);
-
-    return {
-        ...config,
-        counts: final_counts,
-        circuit_depth: 1, // Depth is not really applicable here
-        statistics: stats,
-        logs,
-        referenceState: returnedReferenceState
-    };
+    return { initialState, returnedReferenceState };
 }
 
-
-export async function runSimulation(config: CircuitConfig): Promise<SimulationResults> {
+export async function runSimulation(config: CircuitConfig, audioPayload?: AudioPayload, referenceState?: ReferenceState): Promise<SimulationResults> {
   await new Promise(res => setTimeout(res, 1000 + Math.random() * 1500));
 
   const logs: string[] = [];
@@ -179,17 +148,17 @@ export async function runSimulation(config: CircuitConfig): Promise<SimulationRe
 
   const counts: Record<number, number> = {};
   let circuit_depth = config.depth;
+  let returnedReferenceState: ReferenceState | undefined = undefined;
+
 
   if (config.circuit_type === 'bell' && config.num_qubits >= 2) {
     circuit_depth = 2;
     const p00 = 0.5 - config.noise_level * 0.4;
     const p11 = 0.5 - config.noise_level * 0.4;
     counts[0] = Math.round(config.shots * (p00 + (Math.random()-0.5) * 0.1 * config.noise_level));
-    // The entangled state is between the first and last qubit.
     const last_qubit_state = 1 << (config.num_qubits - 1);
     const bell_state = 1 | last_qubit_state;
     counts[bell_state] = Math.round(config.shots * (p11 + (Math.random()-0.5) * 0.1 * config.noise_level));
-
     if (config.noise_level > 0) {
       counts[1] = Math.round(config.shots * (config.noise_level * 0.4 * Math.random()));
       counts[last_qubit_state] = Math.round(config.shots * (config.noise_level * 0.4 * Math.random()));
@@ -207,21 +176,28 @@ export async function runSimulation(config: CircuitConfig): Promise<SimulationRe
         counts[noisy_state] = (counts[noisy_state] || 0) + Math.round(remaining_shots / 5);
       }
     }
-  } else if (config.circuit_type === 'qft' && config.num_qubits > 0) {
+  } else if (config.circuit_type === 'qft' || (config.circuit_type === 'acoustic' && audioPayload)) {
     circuit_depth = config.num_qubits;
+    let initialState: Record<number, number> = { 0: 1 }; // Default for QFT
+    if (config.circuit_type === 'acoustic' && audioPayload) {
+        const acousticResult = await _runAcousticProcessing(config, audioPayload, logs, referenceState);
+        initialState = acousticResult.initialState;
+        returnedReferenceState = acousticResult.returnedReferenceState;
+    }
+    
     const num_possible_states = 1 << config.num_qubits;
-    const shots_per_state = Math.floor(config.shots / num_possible_states);
+    const shots_per_state = config.shots / num_possible_states;
+    // The QFT creates a uniform superposition, so we distribute the shots evenly
     for (let i = 0; i < num_possible_states; i++) {
         // Apply noise by slightly randomizing the counts
         const noise_effect = Math.round((Math.random() - 0.5) * shots_per_state * config.noise_level * 2);
         counts[i] = Math.max(0, shots_per_state + noise_effect);
     }
   } else { 
-    circuit_depth = config.depth;
+    circuit_depth = config.depth; // random circuit
     let remaining_shots = config.shots;
     const num_possible_states = 1 << config.num_qubits;
     const num_states_to_gen = Math.min(num_possible_states, Math.floor(10 + config.shots / 100));
-
     for (let i = 0; i < num_states_to_gen && remaining_shots > 0; i++) {
       const state = Math.floor(Math.random() * num_possible_states);
       const count = Math.min(remaining_shots, Math.floor(Math.random() * (config.shots / num_states_to_gen) * 2));
@@ -249,5 +225,6 @@ export async function runSimulation(config: CircuitConfig): Promise<SimulationRe
     circuit_depth,
     statistics: stats,
     logs,
+    referenceState: returnedReferenceState,
   };
 }

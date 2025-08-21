@@ -1,8 +1,8 @@
 'use server';
 
 import { analyzeCircuit } from '@/ai/flows';
-import { runAcousticSimulation, runSimulation } from "@/lib/quantum-simulation";
-import { SimulationResults, CircuitConfig, ReferenceState } from '@/lib/types';
+import { runSimulation } from "@/lib/quantum-simulation";
+import { SimulationResults, CircuitConfig, AudioPayload, ReferenceState } from '@/lib/types';
 
 export async function getAnalysis(results: SimulationResults) {
   try {
@@ -17,18 +17,9 @@ export async function getAnalysis(results: SimulationResults) {
   }
 }
 
-export async function getAcousticSimulation(config: CircuitConfig, audioData: { pcmData: number[], rawData: number[] }, referenceState?: ReferenceState) {
+export async function getSimulation(config: CircuitConfig, audioPayload?: AudioPayload, referenceState?: ReferenceState) {
   try {
-    return await runAcousticSimulation(config, audioData, referenceState);
-  } catch(error) {
-    console.error("Error running acoustic simulation:", error);
-    throw new Error("Failed to run acoustic simulation.");
-  }
-}
-
-export async function getSimulation(config: CircuitConfig) {
-  try {
-    return await runSimulation(config);
+    return await runSimulation(config, audioPayload, referenceState);
   } catch (error) {
     console.error("Error running simulation:", error);
     throw new Error("Failed to run simulation.");

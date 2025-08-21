@@ -13,6 +13,11 @@ export interface ReferenceState {
   initialized: boolean;
 }
 
+export interface AudioPayload {
+  pcmData: number[];
+  rawData: number[];
+}
+
 export interface SimulationResults {
   counts: Record<number, number>;
   num_qubits: number;
