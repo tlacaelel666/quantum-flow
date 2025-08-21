@@ -17,7 +17,7 @@ export async function getAnalysis(results: SimulationResults) {
   }
 }
 
-export async function getAcousticSimulation(config: CircuitConfig, audioData: number[]) {
+export async function getAcousticSimulation(config: CircuitConfig, audioData: { pcmData: number[], rawData: number[] }) {
   try {
     return await runAcousticSimulation(config, audioData);
   } catch(error) {

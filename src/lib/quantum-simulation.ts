@@ -1,5 +1,6 @@
 import type { CircuitConfig, SimulationResults } from './types';
 import FFT from 'fft.js';
+import { extractMLFeatures } from './audio-features';
 
 function _calculate_statistics(counts: Record<number, number>, shots: number) {
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -55,20 +56,20 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
 }
 
 
-export async function runAcousticSimulation(config: CircuitConfig, audioData: number[]): Promise<SimulationResults> {
+export async function runAcousticSimulation(config: CircuitConfig, audioData: { rawData: number[], pcmData: number[] }): Promise<SimulationResults> {
     const logs: string[] = [];
     logs.push(`[INFO] QUOREMIND session started at ${new Date().toISOString()}`);
     logs.push(`[INFO] Starting acoustic simulation for ${config.circuit_type} circuit.`);
     logs.push(`[INFO] Configuration: ${config.num_qubits} qubits, ${config.shots} shots, noise=${config.noise_level}.`);
     
     // 1. Perform FFT on audio data
-    const fftSize = Math.pow(2, Math.ceil(Math.log2(audioData.length)));
+    const fftSize = Math.pow(2, Math.ceil(Math.log2(audioData.pcmData.length)));
     const f = new FFT(fftSize);
     const fftResult = f.createComplexArray();
-    f.realTransform(fftResult, audioData);
+    f.realTransform(fftResult, audioData.pcmData);
     f.completeSpectrum(fftResult);
     
-    logs.push(`[INFO] Performed FFT on ${audioData.length} audio samples (padded to ${fftSize}).`);
+    logs.push(`[INFO] Performed FFT on ${audioData.pcmData.length} audio samples (padded to ${fftSize}).`);
     
     // 2. Extract features (magnitudes)
     const magnitudes: number[] = [];
@@ -78,7 +79,21 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: nu
         magnitudes.push(Math.sqrt(real * real + imag * imag));
     }
 
-    // 3. Map features to quantum states
+    // 3. Extract ML Features using the new advanced functions
+    try {
+        const rawDataUint8 = new Uint8Array(audioData.rawData.map(d => (d + 1) * 127.5)); // Assuming PCM is -1 to 1
+        // For now, previousAmplitudes is empty on first run.
+        const mlFeatures = extractMLFeatures(magnitudes, rawDataUint8, [], audioData.pcmData.length * 2); // Approximation of sample rate
+        logs.push(`[INFO] Extracted ML Feature Vector:`);
+        logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
+    } catch(e) {
+        if (e instanceof Error) {
+            logs.push(`[ERROR] Could not extract ML features: ${e.message}`);
+        }
+    }
+
+
+    // 4. Map features to quantum states
     const numStates = 1 << config.num_qubits;
     const counts: Record<number, number> = {};
     const featuresPerState = Math.floor(magnitudes.length / numStates);
@@ -103,7 +118,7 @@ export async function runAcousticSimulation(config: CircuitConfig, audioData: nu
 
     logs.push(`[INFO] Mapped ${magnitudes.length} frequency bins to ${numStates} quantum states.`);
 
-    // 4. Normalize probabilities and assign shots
+    // 5. Normalize probabilities and assign shots
     if (totalMagnitude > 0) {
         for (const state in counts) {
             counts[state] = (counts[state] / totalMagnitude) * config.shots;

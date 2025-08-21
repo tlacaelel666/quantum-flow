@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef } from "react";
+import { useState } from "react";
+import { useFormContext } from "react-hook-form";
 import Banner from "./banner";
 import ConfigPanel from "./config-panel";
 import OutputPanel from "./output-panel";
@@ -22,6 +23,9 @@ export default function QuantumFlowPage() {
     setAiAnalysis(null);
     try {
       if (config.circuit_type === 'acoustic') {
+        // This path is now handled by the form's submit button logic
+        // which calls handleAcousticSimulate directly.
+        // We add a fallback here just in case.
         await handleAcousticSimulate(config);
       } else {
         const results = await getSimulation(config);
@@ -53,13 +57,17 @@ export default function QuantumFlowPage() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        // Use a smaller buffer size for lower latency processing
+        const processor = audioContext.createScriptProcessor(2048, 1, 1);
 
-        let audioData: number[] = [];
+        let pcmData: number[] = [];
+        let rawData: number[] = [];
+        
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < inputData.length; i++) {
-                audioData.push(inputData[i]);
+                pcmData.push(inputData[i]);
+                rawData.push(inputData[i]); // Store raw PCM for ZCR
             }
         };
 
@@ -67,15 +75,19 @@ export default function QuantumFlowPage() {
         processor.connect(audioContext.destination);
 
         setTimeout(async () => {
-            source.disconnect();
-            processor.disconnect();
-            audioContext.close();
+            source.disconnect(processor);
+            processor.disconnect(audioContext.destination);
             stream.getTracks().forEach(track => track.stop());
+            
+            // It's better to close the context after a short delay
+            setTimeout(() => audioContext.close(), 500);
+
             setIsRecording(false);
             toast({ title: "Procesando simulación acústica..." });
             
             setIsSimulating(true);
-            const results = await getAcousticSimulation(config, audioData);
+            const audioPayload = { pcmData, rawData };
+            const results = await getAcousticSimulation(config, audioPayload);
             setSimulationResults(results);
             toast({
               title: "Simulación Acústica Completa",
@@ -93,6 +105,7 @@ export default function QuantumFlowPage() {
             description: "No se pudo acceder al micrófono. Por favor, comprueba los permisos.",
         });
         setIsRecording(false);
+        setIsSimulating(false);
     }
   };
 
@@ -131,7 +144,7 @@ export default function QuantumFlowPage() {
       <Banner />
       <ConfigPanel 
         onSimulate={handleSimulate}
-        onAcousticSimulate={() => {}} // This is now handled by the form's onSubmit
+        onAcousticSimulate={handleAcousticSimulate}
         isLoading={isSimulating}
         isRecording={isRecording}
       />

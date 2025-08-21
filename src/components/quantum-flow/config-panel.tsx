@@ -63,7 +63,7 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
   },
 };
 
-export default function ConfigPanel({ onSimulate, isLoading, isRecording }: ConfigPanelProps) {
+export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording }: ConfigPanelProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -77,7 +77,11 @@ export default function ConfigPanel({ onSimulate, isLoading, isRecording }: Conf
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    onSimulate(values);
+    if (values.circuit_type === 'acoustic') {
+      onAcousticSimulate(values);
+    } else {
+      onSimulate(values);
+    }
   }
 
   const circuitType = form.watch('circuit_type');
@@ -208,18 +212,20 @@ export default function ConfigPanel({ onSimulate, isLoading, isRecording }: Conf
                 </FormItem>
               )}
             />
-
-            {circuitType === 'acoustic' ? (
-              <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isLoading || isRecording}>
-                <Mic className="mr-2 h-4 w-4" />
-                {isRecording ? "Grabando..." : (isLoading ? "Simulando..." : "Grabar y Simular")}
-              </Button>
-            ) : (
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
-                <Play className="mr-2 h-4 w-4" />
-                {isLoading ? "Simulando..." : "Ejecutar Simulación"}
-              </Button>
-            )}
+            
+            <Button type="submit" className="w-full" disabled={isLoading || isRecording}>
+              {circuitType === 'acoustic' ? (
+                <>
+                  <Mic className="mr-2 h-4 w-4" />
+                  {isRecording ? "Grabando..." : (isLoading ? "Simulando..." : "Grabar y Simular")}
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  {isLoading ? "Simulando..." : "Ejecutar Simulación"}
+                </>
+              )}
+            </Button>
           </form>
         </Form>
       </CardContent>
