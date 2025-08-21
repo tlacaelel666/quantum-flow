@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Play, Settings2, Cpu, Repeat, Thermometer, Eye, Info } from 'lucide-react';
+import { Play, Settings2, Cpu, Repeat, Thermometer, Eye, Info, Mic } from 'lucide-react';
 import type { CircuitConfig } from '@/lib/types';
 
 const formSchema = z.object({
@@ -25,7 +25,9 @@ const formSchema = z.object({
 
 type ConfigPanelProps = {
   onSimulate: (config: CircuitConfig) => void;
+  onAcousticSimulate: () => void;
   isLoading: boolean;
+  isRecording: boolean;
 };
 
 const circuitDescriptions: Record<string, { title: string, description: string, parameters: string } | null> = {
@@ -49,6 +51,11 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
     description: "Genera un circuito con compuertas cuánticas aleatorias, a menudo utilizado para comparar hardware cuántico y explorar la dinámica cuántica caótica.",
     parameters: "El circuito se construye con compuertas aleatorias de un solo cúbit y de dos cúbits hasta una 'Profundidad de Circuito' especificada."
   },
+  acoustic: {
+    title: "Circuito Acústico",
+    description: "Utiliza la entrada del micrófono para generar un estado cuántico inicial basado en las características de frecuencia del sonido capturado.",
+    parameters: "Las amplitudes de frecuencia del análisis FFT del audio se utilizan para ponderar las probabilidades de los estados base de la simulación."
+  },
   custom: {
     title: "Circuito Personalizado",
     description: "Esta opción te permitirá definir tu propio circuito cuántico.",
@@ -56,13 +63,13 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
   },
 };
 
-export default function ConfigPanel({ onSimulate, isLoading }: ConfigPanelProps) {
+export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording }: ConfigPanelProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       circuit_type: "bell",
-      num_qubits: 3,
-      depth: 5,
+      num_qubits: 5,
+      depth: 10,
       shots: 1000,
       noise_level: 0.05,
       verbose: false,
@@ -70,7 +77,11 @@ export default function ConfigPanel({ onSimulate, isLoading }: ConfigPanelProps)
   });
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    onSimulate(values);
+    if (values.circuit_type === 'acoustic') {
+      onAcousticSimulate();
+    } else {
+      onSimulate(values);
+    }
   }
 
   const circuitType = form.watch('circuit_type');
@@ -104,6 +115,7 @@ export default function ConfigPanel({ onSimulate, isLoading }: ConfigPanelProps)
                           <SelectItem value="ghz">Estado GHZ</SelectItem>
                           <SelectItem value="qft">Transformada Cuántica de Fourier</SelectItem>
                           <SelectItem value="random">Circuito Aleatorio</SelectItem>
+                          <SelectItem value="acoustic">Circuito Acústico</SelectItem>
                           <SelectItem value="custom" disabled>Personalizado (No Implementado)</SelectItem>
                         </SelectContent>
                       </Select>
@@ -201,10 +213,17 @@ export default function ConfigPanel({ onSimulate, isLoading }: ConfigPanelProps)
               )}
             />
 
-            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
-              <Play className="mr-2 h-4 w-4" />
-              {isLoading ? "Simulando..." : "Ejecutar Simulación"}
-            </Button>
+            {circuitType === 'acoustic' ? (
+              <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isLoading || isRecording}>
+                <Mic className="mr-2 h-4 w-4" />
+                {isRecording ? "Grabando..." : (isLoading ? "Simulando..." : "Grabar y Simular")}
+              </Button>
+            ) : (
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
+                <Play className="mr-2 h-4 w-4" />
+                {isLoading ? "Simulando..." : "Ejecutar Simulación"}
+              </Button>
+            )}
           </form>
         </Form>
       </CardContent>

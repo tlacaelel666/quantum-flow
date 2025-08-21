@@ -1,7 +1,8 @@
 'use server';
 
 import { analyzeCircuit } from '@/ai/flows';
-import { SimulationResults } from '@/lib/types';
+import { runAcousticSimulation, runSimulation } from "@/lib/quantum-simulation";
+import { SimulationResults, CircuitConfig } from '@/lib/types';
 
 export async function getAnalysis(results: SimulationResults) {
   try {
@@ -13,5 +14,23 @@ export async function getAnalysis(results: SimulationResults) {
       return "AI Analysis Error: No generative model has been configured. Please check your Genkit setup in `src/ai/genkit.ts`.";
     }
     return "An unexpected error occurred while contacting the AI service.";
+  }
+}
+
+export async function getAcousticSimulation(config: CircuitConfig, audioData: number[]) {
+  try {
+    return await runAcousticSimulation(config, audioData);
+  } catch(error) {
+    console.error("Error running acoustic simulation:", error);
+    throw new Error("Failed to run acoustic simulation.");
+  }
+}
+
+export async function getSimulation(config: CircuitConfig) {
+  try {
+    return await runSimulation(config);
+  } catch (error) {
+    console.error("Error running simulation:", error);
+    throw new Error("Failed to run simulation.");
   }
 }

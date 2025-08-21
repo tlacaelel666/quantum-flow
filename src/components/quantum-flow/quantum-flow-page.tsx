@@ -4,14 +4,14 @@ import { useState } from "react";
 import Banner from "./banner";
 import ConfigPanel from "./config-panel";
 import OutputPanel from "./output-panel";
-import { runSimulation } from "@/lib/quantum-simulation";
 import type { CircuitConfig, SimulationResults } from "@/lib/types";
-import { getAnalysis } from "@/app/actions";
+import { getAnalysis, getAcousticSimulation, getSimulation } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
 
 export default function QuantumFlowPage() {
   const [simulationResults, setSimulationResults] = useState<SimulationResults | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const { toast } = useToast();
@@ -21,7 +21,7 @@ export default function QuantumFlowPage() {
     setSimulationResults(null);
     setAiAnalysis(null);
     try {
-      const results = await runSimulation(config);
+      const results = await getSimulation(config);
       setSimulationResults(results);
       toast({
         title: "Simulación Completa",
@@ -38,6 +38,60 @@ export default function QuantumFlowPage() {
       setIsSimulating(false);
     }
   };
+
+  const handleAcousticSimulate = async (config: CircuitConfig) => {
+    setIsRecording(true);
+    setSimulationResults(null);
+    setAiAnalysis(null);
+    toast({ title: "Grabando audio...", description: "Por favor, haz algo de ruido." });
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        let audioData: number[] = [];
+        processor.onaudioprocess = (e) => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            for (let i = 0; i < inputData.length; i++) {
+                audioData.push(inputData[i]);
+            }
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        setTimeout(async () => {
+            source.disconnect();
+            processor.disconnect();
+            audioContext.close();
+            stream.getTracks().forEach(track => track.stop());
+            setIsRecording(false);
+            toast({ title: "Procesando simulación acústica..." });
+            
+            setIsSimulating(true);
+            const results = await getAcousticSimulation(config, audioData);
+            setSimulationResults(results);
+            toast({
+              title: "Simulación Acústica Completa",
+              description: `El circuito se inicializó con datos de audio.`,
+            });
+            setIsSimulating(false);
+
+        }, 2000); // Record for 2 seconds
+
+    } catch (error) {
+        console.error("Error capturing audio:", error);
+        toast({
+            variant: "destructive",
+            title: "Falló la Captura de Audio",
+            description: "No se pudo acceder al micrófono. Por favor, comprueba los permisos.",
+        });
+        setIsRecording(false);
+    }
+  };
+
 
   const handleAnalyze = async () => {
     if (!simulationResults) {
@@ -68,11 +122,43 @@ export default function QuantumFlowPage() {
     }
   };
 
+  const formRef = React.useRef<{ getValues: () => CircuitConfig }>(null);
+
+  const handleSimulateWrapper = (config: CircuitConfig) => {
+      if (config.circuit_type === 'acoustic') {
+          handleAcousticSimulate(config);
+      } else {
+          handleSimulate(config);
+      }
+  };
+
 
   return (
     <div className="space-y-8">
       <Banner />
-      <ConfigPanel onSimulate={handleSimulate} isLoading={isSimulating} />
+      <ConfigPanel 
+        onSimulate={handleSimulate}
+        onAcousticSimulate={() => {
+            // This is a bit of a hack to get the form values out.
+            // A better solution would involve lifting state up.
+            const form = document.querySelector('form');
+            if(form) {
+                const formData = new FormData(form);
+                const values = Object.fromEntries(formData.entries());
+                const config: CircuitConfig = {
+                    circuit_type: values.circuit_type as string,
+                    num_qubits: Number(values.num_qubits),
+                    depth: Number(values.depth),
+                    shots: Number(values.shots),
+                    noise_level: Number(values.noise_level),
+                    verbose: values.verbose === 'on',
+                };
+                handleAcousticSimulate(config);
+            }
+        }}
+        isLoading={isSimulating}
+        isRecording={isRecording}
+      />
       <OutputPanel 
         results={simulationResults}
         aiAnalysis={aiAnalysis}
