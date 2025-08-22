@@ -158,9 +158,10 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
   logs.push(`[INFO] Configuration: ${config.num_qubits} qubits, ${config.shots} shots, noise=${config.noise_level}.`);
 
   if (config.circuit_type === 'acoustic' && audioPayload && referenceState) {
+    const isCalibrationRun = !referenceState.initialized;
     const acousticResult = await _runAcousticProcessing(config, audioPayload, referenceState, logs);
     
-    if (acousticResult.newReferenceState) {
+    if (isCalibrationRun) {
       // This was a calibration run, return immediately with the new state
       return {
         ...config,
