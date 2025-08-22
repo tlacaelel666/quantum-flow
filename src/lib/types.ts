@@ -1,3 +1,4 @@
+
 export interface CircuitConfig {
   num_qubits: number;
   depth: number;
@@ -33,4 +34,24 @@ export interface SimulationResults {
   };
   logs: string[];
   referenceState?: ReferenceState;
+}
+
+// Types for the Quantum Database
+export interface Complex {
+  real: number;
+  imaginary: number;
+}
+
+export interface QuantumState {
+  amplitude: number;
+  phase: number;
+  qubit_state: string;
+  frequency_bin: number;
+}
+
+export interface PressureWaveFeatures {
+  features: number[];
+  quantum_states: QuantumState[];
+  fft_coefficients: Complex[];
+  coherence_matrix: number[][];
 }

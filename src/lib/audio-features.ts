@@ -1,159 +1,222 @@
-// Constants
-export const AMPLITUDE_THRESHOLD = 0.1;
-export const FFT_SIZE = 2048; // Must be a power of 2
+// Base de datos de referencia para FFT cuántica con 32 características de amplitudes de onda de presión
+
 export const FEATURE_VECTOR_SIZE = 32;
 
-export interface ReferenceState {
-  mean: number[];
-  covariance: number[] | null;
-  initialized: boolean;
+export interface Complex {
+  real: number;
+  imaginary: number;
 }
 
-// APLANAMIENTO BINARIO: Convierte amplitudes a representación binaria
-export const flattenToBinary = (amplitudes: number[]): number[] => {
-  const binaryVector: number[] = [];
-  amplitudes.forEach((amp) => {
-    // Método 1: Umbralización binaria
-    const isActive = amp > AMPLITUDE_THRESHOLD ? 1 : 0;
-    binaryVector.push(isActive);
-    // Método 2: Codificación de magnitud (4 bits)
-    const quantized = Math.floor(amp * 15);
-    const binaryMagnitude = quantized.toString(2).padStart(4, '0');
-    binaryVector.push(...binaryMagnitude.split('').map(Number));
-  });
-  return binaryVector;
-};
+export interface QuantumState {
+  amplitude: number;      // Amplitud normalizada [0,1]
+  phase: number;         // Fase en radianes [0, 2π]
+  qubit_state: string;   // Estado de 5 qubits (32 combinaciones posibles)
+  frequency_bin: number; // Bin de frecuencia correspondiente
+}
 
-// --- Funciones auxiliares de características espectrales ---
+export interface PressureWaveFeatures {
+  // 32 características fundamentales de amplitudes de onda de presión
+  features: number[];                    // Vector de 32 características
+  quantum_states: QuantumState[];        // 32 estados cuánticos base
+  fft_coefficients: Complex[];           // Coeficientes FFT complejos
+  coherence_matrix: number[][];          // Matriz de coherencia 32x32
+}
 
-const calculateSpectralCentroid = (amplitudes: number[], sampleRate: number): number => {
-  let weightedSum = 0;
-  let totalEnergy = 0;
-  amplitudes.forEach((amp, idx) => {
-    const freq = (idx * sampleRate) / (2 * amplitudes.length);
-    weightedSum += freq * amp;
-    totalEnergy += amp;
-  });
-  return totalEnergy > 0 ? weightedSum / totalEnergy : 0;
-};
-
-const calculateSpectralRolloff = (amplitudes: number[], sampleRate: number, threshold = 0.85): number => {
-  const totalEnergy = amplitudes.reduce((sum, amp) => sum + amp, 0);
-  if (totalEnergy === 0) return 0;
-  const targetEnergy = totalEnergy * threshold;
-  let cumulativeEnergy = 0;
-  for (let i = 0; i < amplitudes.length; i++) {
-    cumulativeEnergy += amplitudes[i];
-    if (cumulativeEnergy >= targetEnergy) {
-      return (i * sampleRate) / (2 * amplitudes.length);
-    }
-  }
-  return ((amplitudes.length - 1) * sampleRate) / (2 * amplitudes.length);
-};
-
-export const calculateSpectralFlux = (amplitudes: number[], previousAmplitudes: number[]): number => {
-    if (previousAmplitudes.length === 0) {
-        return 0;
-    }
-    const flux = amplitudes.reduce((sum, amp, idx) => {
-        const diff = amp - (previousAmplitudes[idx] || 0);
-        return sum + (diff > 0 ? diff * diff : 0); // Use squared difference for stability
-    }, 0);
-    return Math.sqrt(flux);
-};
-
-
-const calculateZeroCrossingRate = (rawData: number[]): number => {
-  let crossings = 0;
-  for (let i = 1; i < rawData.length; i++) {
-    // rawData is -1 to 1, so 0 is the zero-crossing point
-    if ((rawData[i] >= 0) !== (rawData[i - 1] >= 0)) {
-      crossings++;
-    }
-  }
-  return crossings / rawData.length;
-};
-
-const calculateSpectralContrast = (amplitudes: number[]): number[] => {
-  const octaveBands = 6;
-  const contrasts: number[] = [];
-  for (let i = 0; i < octaveBands; i++) {
-    const startBin = Math.floor(amplitudes.length * Math.pow(2, i) / Math.pow(2, octaveBands));
-    const endBin = Math.floor(amplitudes.length * Math.pow(2, i + 1) / Math.pow(2, octaveBands));
-    const bandAmps = amplitudes.slice(startBin, endBin);
-    if (bandAmps.length === 0) {
-      contrasts.push(0);
-      continue;
-    }
-    const sortedAmps = [...bandAmps].sort((a, b) => b - a);
-    const peakCount = Math.max(1, Math.floor(sortedAmps.length * 0.1));
-    const valleyCount = Math.max(1, Math.floor(sortedAmps.length * 0.1));
-    const peakMean = sortedAmps.slice(0, peakCount).reduce((sum, amp) => sum + amp, 0) / peakCount;
-    const valleyMean = sortedAmps.slice(-valleyCount).reduce((sum, amp) => sum + amp, 0) / valleyCount;
-    contrasts.push(peakMean > valleyMean ? Math.log10(peakMean) - Math.log10(valleyMean) : 0);
-  }
-  return contrasts;
-};
-
-const calculateSimplifiedMFCC = (amplitudes: number[], sampleRate: number): number[] => {
-  const mfcc: number[] = [];
-  const melFilters = 13;
-  const maxFreq = sampleRate / 2;
-  const maxMel = 1127 * Math.log(1 + maxFreq / 700);
-
-  for (let m = 1; m <= melFilters; m++) {
-      let filterEnergy = 0;
-      // This is a highly simplified filterbank
-      const startBin = Math.floor(amplitudes.length * (m-1) / melFilters);
-      const endBin = Math.floor(amplitudes.length * m / melFilters);
-
-      for(let k = startBin; k < endBin; k++) {
-        filterEnergy += amplitudes[k] * amplitudes[k];
-      }
-      mfcc.push(filterEnergy > 0 ? Math.log(filterEnergy) : 0);
-  }
-  return mfcc;
-};
-
-// EXTRACCIÓN DE CARACTERÍSTICAS ML
-export const extractMLFeatures = (amplitudes: number[], rawData: number[], previousAmplitudes: number[], sampleRate: number): number[] => {
-  const features: number[] = [];
+// Función para convertir amplitud de presión a estado cuántico
+function amplitudeToQuantumState(amplitude: number, index: number, sampleRate: number = 44100): QuantumState {
+  // Normalización de amplitud de presión sonora
+  const normalizedAmplitude = Math.min(Math.abs(amplitude) / 32767, 1.0); // Para 16-bit audio
   
-  features.push(calculateSpectralCentroid(amplitudes, sampleRate));
-  features.push(calculateSpectralRolloff(amplitudes, sampleRate));
-  features.push(calculateSpectralFlux(amplitudes, previousAmplitudes));
-  features.push(calculateZeroCrossingRate(rawData));
+  // Cálculo de fase basada en la posición en el espectro
+  const phase = (index * 2 * Math.PI / 32) % (2 * Math.PI);
+  
+  // Estado cuántico de 5 qubits (2^5 = 32 estados)
+  const qubit_state = index.toString(2).padStart(5, '0');
+  
+  // Bin de frecuencia correspondiente
+  const frequency_bin = (index * sampleRate) / (2 * 32); // Frecuencia en Hz
+  
+  return {
+    amplitude: normalizedAmplitude,
+    phase: phase,
+    qubit_state: qubit_state,
+    frequency_bin: frequency_bin
+  };
+}
 
-  const frequencyBands = [
-    { start: 0, end: 60 }, { start: 60, end: 250 }, { start: 250, end: 500 },
-    { start: 500, end: 2000 }, { start: 2000, end: 4000 }, { start: 4000, end: 22000 }
-  ];
-  frequencyBands.forEach(band => {
-    const startBin = Math.floor((band.start / sampleRate) * FFT_SIZE);
-    const endBin = Math.min(amplitudes.length, Math.floor((band.end / sampleRate) * FFT_SIZE));
-    const bandEnergy = amplitudes.slice(startBin, endBin).reduce((sum, amp) => sum + amp * amp, 0);
-    features.push(Math.sqrt(bandEnergy));
+// Función para calcular FFT cuántica
+function quantumFFT(amplitudes: number[]): Complex[] {
+  const N = amplitudes.length;
+  const result: Complex[] = [];
+  
+  for (let k = 0; k < N; k++) {
+    let real = 0;
+    let imaginary = 0;
+    
+    for (let n = 0; n < N; n++) {
+      const angle = -2 * Math.PI * k * n / N;
+      real += amplitudes[n] * Math.cos(angle);
+      imaginary += amplitudes[n] * Math.sin(angle);
+    }
+    
+    result.push({
+      real: real / Math.sqrt(N),      // Normalización cuántica
+      imaginary: imaginary / Math.sqrt(N)
+    });
+  }
+  
+  return result;
+}
+
+// Función para generar matriz de coherencia cuántica
+function generateCoherenceMatrix(quantum_states: QuantumState[]): number[][] {
+  const size = quantum_states.length;
+  const matrix: number[][] = [];
+  
+  for (let i = 0; i < size; i++) {
+    matrix[i] = [];
+    for (let j = 0; j < size; j++) {
+      if (i === j) {
+        matrix[i][j] = 1.0;
+      } else {
+        // Coherencia basada en diferencia de amplitudes y fases
+        const amp_diff = Math.abs(quantum_states[i].amplitude - quantum_states[j].amplitude);
+        const phase_diff = Math.abs(quantum_states[i].phase - quantum_states[j].phase);
+        const coherence = Math.exp(-(amp_diff + phase_diff * 0.1));
+        matrix[i][j] = coherence;
+      }
+    }
+  }
+  
+  return matrix;
+}
+
+// Base de datos de referencia con patrones de amplitudes de presión típicos
+export const PRESSURE_WAVE_DATABASE: PressureWaveFeatures[] = [
+  {
+    // Patrón 1: Onda senoidal pura con armónicos
+    features: [
+      1.0, 0.8, 0.6, 0.4, 0.3, 0.2, 0.15, 0.1, 0.08, 0.06, 0.04, 0.03,
+      0.02, 0.015, 0.01, 0.008, 0.006, 0.004, 0.003, 0.002, 0.0015, 0.001,
+      0.0008, 0.0006, 0.0004, 0.0003, 0.0002, 0.00015, 0.0001, 0.00008, 0.00006, 0.00004
+    ],
+    quantum_states: [],
+    fft_coefficients: [],
+    coherence_matrix: []
+  },
+  {
+    // Patrón 2: Onda cuadrada con armónicos impares
+    features: [
+      1.0, 0.0, 0.33, 0.0, 0.2, 0.0, 0.14, 0.0, 0.11, 0.0, 0.09, 0.0,
+      0.077, 0.0, 0.067, 0.0, 0.059, 0.0, 0.053, 0.0, 0.048, 0.0,
+      0.043, 0.0, 0.04, 0.0, 0.037, 0.0, 0.034, 0.0, 0.032, 0.0
+    ],
+    quantum_states: [],
+    fft_coefficients: [],
+    coherence_matrix: []
+  },
+  {
+    // Patrón 3: Onda diente de sierra
+    features: [
+      1.0, 0.5, 0.33, 0.25, 0.2, 0.167, 0.143, 0.125, 0.111, 0.1, 0.091, 0.083,
+      0.077, 0.071, 0.067, 0.063, 0.059, 0.056, 0.053, 0.05, 0.048, 0.045,
+      0.043, 0.042, 0.04, 0.038, 0.037, 0.036, 0.034, 0.033, 0.032, 0.031
+    ],
+    quantum_states: [],
+    fft_coefficients: [],
+    coherence_matrix: []
+  },
+  {
+    // Patrón 4: Ruido blanco filtrado
+    features: [
+      0.8, 0.9, 0.7, 0.85, 0.6, 0.75, 0.65, 0.8, 0.55, 0.7, 0.6, 0.65,
+      0.5, 0.6, 0.45, 0.55, 0.4, 0.5, 0.35, 0.45, 0.3, 0.4, 0.25, 0.35,
+      0.2, 0.3, 0.15, 0.25, 0.1, 0.2, 0.05, 0.15
+    ],
+    quantum_states: [],
+    fft_coefficients: [],
+    coherence_matrix: []
+  }
+];
+
+// Inicialización de la base de datos
+export function initializeQuantumDatabase(): void {
+  PRESSURE_WAVE_DATABASE.forEach(pattern => {
+    // Generar estados cuánticos para cada característica
+    pattern.quantum_states = pattern.features.map((amplitude, index) => 
+      amplitudeToQuantumState(amplitude, index)
+    );
+    
+    // Calcular FFT cuántica
+    pattern.fft_coefficients = quantumFFT(pattern.features);
+    
+    // Generar matriz de coherencia
+    pattern.coherence_matrix = generateCoherenceMatrix(pattern.quantum_states);
   });
+}
 
-  features.push(...calculateSpectralContrast(amplitudes));
-  features.push(...calculateSimplifiedMFCC(amplitudes, sampleRate));
-
-  // Ensure vector is exactly the correct size, padding with 0 if necessary
-  while(features.length < FEATURE_VECTOR_SIZE) {
-    features.push(0);
+// Función para buscar el patrón más similar
+export function findSimilarPattern(inputFeatures: number[]): { 
+  pattern: PressureWaveFeatures, 
+  similarity: number 
+} | null {
+  if (inputFeatures.length !== FEATURE_VECTOR_SIZE) {
+    console.error(`Input features must have a length of ${FEATURE_VECTOR_SIZE}.`);
+    return null;
   }
+  let bestMatch = PRESSURE_WAVE_DATABASE[0];
+  let bestSimilarity = 0;
+  
+  PRESSURE_WAVE_DATABASE.forEach(pattern => {
+    // Cálculo de similitud usando producto escalar normalizado
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+      dotProduct += inputFeatures[i] * pattern.features[i];
+      normA += inputFeatures[i] * inputFeatures[i];
+      normB += pattern.features[i] * pattern.features[i];
+    }
+    
+    if (normA === 0 || normB === 0) {
+      return;
+    }
 
-  return features.slice(0, FEATURE_VECTOR_SIZE);
-};
+    const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+      bestMatch = pattern;
+    }
+  });
+  
+  return { pattern: bestMatch, similarity: bestSimilarity };
+}
 
-// CÁLCULO DE DISTANCIA DE MAHALANOBIS
-export const calculateMahalanobisDistance = (features: number[], referenceState: ReferenceState): number => {
-  if (!referenceState.initialized || !referenceState.covariance) {
-    return 0;
-  }
-  const diff = features.map((f, i) => f - referenceState.mean[i]);
-  // Simplificación: usar inversa diagonal de covarianza
-  const diagCovInv = referenceState.covariance.map(cov => 1 / (cov + 1e-6));
-  const distanceSquared = diff.reduce((sum, d, i) => sum + d * d * diagCovInv[i], 0);
-  return Math.sqrt(distanceSquared);
-};
+// Función de utilidad para extraer características de las magnitudes de audio
+export function extractFeaturesFromMagnitudes(magnitudes: number[]): number[] {
+    const featureVector: number[] = new Array(FEATURE_VECTOR_SIZE).fill(0);
+    const step = Math.floor(magnitudes.length / FEATURE_VECTOR_SIZE);
+    if (step < 1) {
+        for(let i=0; i<FEATURE_VECTOR_SIZE; i++){
+            featureVector[i] = magnitudes[i] || 0;
+        }
+        return featureVector;
+    }
+    for (let i = 0; i < FEATURE_VECTOR_SIZE; i++) {
+        const slice = magnitudes.slice(i * step, (i + 1) * step);
+        if (slice.length > 0) {
+            featureVector[i] = slice.reduce((a, b) => a + b, 0) / slice.length;
+        }
+    }
+    const maxVal = Math.max(...featureVector);
+    if (maxVal > 0) {
+      return featureVector.map(v => v / maxVal);
+    }
+    return featureVector;
+}
+
+
+// Inicializar base de datos al cargar
+initializeQuantumDatabase();

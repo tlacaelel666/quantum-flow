@@ -1,7 +1,8 @@
 
 import type { CircuitConfig, SimulationResults, ReferenceState, AudioPayload } from './types';
 import FFT from 'fft.js';
-import { extractMLFeatures, calculateMahalanobisDistance, calculateSpectralFlux, FEATURE_VECTOR_SIZE } from './audio-features';
+import { extractFeaturesFromMagnitudes, findSimilarPattern } from './audio-features';
+
 
 function _calculate_statistics(counts: Record<number, number>, shots: number) {
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -62,12 +63,9 @@ function _normalizeCounts(counts: Record<number, number>, totalShots: number): R
     return cleanedCounts;
 }
 
-let previousAmplitudes: number[] = [];
-
-async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPayload, logs: string[], referenceState?: ReferenceState): Promise<{ initialState: Record<number, number>, returnedReferenceState?: ReferenceState }> {
-    logs.push(`[INFO] Starting acoustic processing.`);
+async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPayload, logs: string[]): Promise<{ initialState: Record<number, number>}> {
+    logs.push(`[INFO] Starting acoustic processing with pattern matching.`);
     
-    // 1. Perform FFT on audio data
     const fftSize = Math.pow(2, Math.ceil(Math.log2(audioData.pcmData.length)));
     const f = new FFT(fftSize);
     const fftResult = f.createComplexArray();
@@ -76,7 +74,6 @@ async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPay
     
     logs.push(`[INFO] Performed FFT on ${audioData.pcmData.length} audio samples (padded to ${fftSize}).`);
     
-    // 2. Extract features (magnitudes)
     const magnitudes: number[] = [];
     for (let i = 0; i < fftResult.length / 2; i++) {
         const real = fftResult[i * 2];
@@ -84,61 +81,31 @@ async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPay
         magnitudes.push(Math.sqrt(real * real + imag * imag));
     }
 
-    // 3. Extract ML Features using the new advanced functions
-    const sampleRate = 44100; // Assume a standard sample rate
-    const mlFeatures = extractMLFeatures(magnitudes, audioData.rawData, previousAmplitudes, sampleRate);
-    
-    let returnedReferenceState: ReferenceState | undefined = undefined;
-    let distance = 0;
-    
-    if (referenceState && !referenceState.initialized) {
-        logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
-        const mean = mlFeatures;
-        // Simplified variance for this example. In a real scenario, you'd collect multiple samples.
-        const variance = mlFeatures.map(() => 1); // Start with unit variance
-        returnedReferenceState = {
-            mean: mean,
-            covariance: variance, 
-            initialized: true
-        };
-        logs.push(`[DATA] Stored Mean Vector: ${JSON.stringify(returnedReferenceState.mean.map(f => f.toFixed(4)))}`);
-        logs.push(`[DATA] Stored Variance Vector: ${JSON.stringify(returnedReferenceState.covariance.map(f => f.toFixed(4)))}`);
+    const inputFeatures = extractFeaturesFromMagnitudes(magnitudes);
+    logs.push(`[DATA] Extracted live audio feature vector: ${JSON.stringify(inputFeatures.map(f=>f.toFixed(3)))}`);
 
-    } else if (referenceState && referenceState.initialized) {
-        distance = calculateMahalanobisDistance(mlFeatures, referenceState);
-        logs.push(`[INFO] Mahalanobis Distance to reference: ${distance.toFixed(4)}`);
-    }
-
-    const spectralFlux = calculateSpectralFlux(magnitudes, previousAmplitudes);
-    previousAmplitudes = magnitudes;
-    logs.push(`[INFO] Spectral Flux: ${spectralFlux.toFixed(4)}`);
-    logs.push(`[INFO] Extracted ML Feature Vector:`);
-    logs.push(`[DATA] ${JSON.stringify(mlFeatures.map(f => f.toFixed(4)))}`);
+    const matchResult = findSimilarPattern(inputFeatures);
     
-    // 4. Map features to quantum states
-    const numStates = 1 << config.num_qubits;
     const initialState: Record<number, number> = {};
-    const featuresPerState = Math.floor(magnitudes.length / numStates);
-
-    if (featuresPerState < 1) {
-        logs.push(`[WARN] Not enough frequency data to map to all quantum states. Some states will have 0 probability.`);
+    
+    if (matchResult) {
+        logs.push(`[INFO] Found similar pattern with similarity ${matchResult.similarity.toFixed(4)}.`);
+        matchResult.pattern.quantum_states.forEach(state => {
+            const stateIndex = parseInt(state.qubit_state, 2);
+            initialState[stateIndex] = state.amplitude;
+        });
+        logs.push(`[INFO] Initializing quantum state based on matched pattern's amplitudes.`);
+    } else {
+        logs.push(`[WARN] No similar pattern found. Using direct magnitudes.`);
+        const numStates = 1 << config.num_qubits;
+        magnitudes.slice(0, numStates).forEach((mag, i) => {
+            initialState[i] = mag;
+        });
     }
 
-    for(let i = 0; i < numStates; i++) {
-        let stateMagnitude = 0;
-        if(featuresPerState > 0) {
-          for(let j=0; j < featuresPerState; j++) {
-              stateMagnitude += magnitudes[i * featuresPerState + j];
-          }
-        } else if (i < magnitudes.length) {
-            stateMagnitude = magnitudes[i];
-        }
-        initialState[i] = stateMagnitude;
-    }
-
-    logs.push(`[INFO] Mapped ${magnitudes.length} frequency bins to ${numStates} quantum states.`);
-    return { initialState, returnedReferenceState };
+    return { initialState };
 }
+
 
 export async function runSimulation(config: CircuitConfig, audioPayload?: AudioPayload, referenceState?: ReferenceState): Promise<SimulationResults> {
   await new Promise(res => setTimeout(res, 1000 + Math.random() * 1500));
@@ -150,8 +117,6 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
 
   const counts: Record<number, number> = {};
   let circuit_depth = config.depth;
-  let returnedReferenceState: ReferenceState | undefined = undefined;
-
 
   if (config.circuit_type === 'bell' && config.num_qubits >= 2) {
     circuit_depth = 2;
@@ -183,9 +148,8 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     let initialState: Record<number, number> = {}; 
 
     if (config.circuit_type === 'acoustic' && audioPayload) {
-        const acousticResult = await _runAcousticProcessing(config, audioPayload, logs, referenceState);
+        const acousticResult = await _runAcousticProcessing(config, audioPayload, logs);
         initialState = acousticResult.initialState;
-        returnedReferenceState = acousticResult.returnedReferenceState;
     } else { // QFT
         const num_possible_states = 1 << config.num_qubits;
         for (let i = 0; i < num_possible_states; i++) {
@@ -242,6 +206,5 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     circuit_depth,
     statistics: stats,
     logs,
-    referenceState: returnedReferenceState,
   };
 }
