@@ -196,14 +196,11 @@ export function findSimilarPattern(inputFeatures: number[]): {
 
 // Función de utilidad para extraer características de las magnitudes de audio
 export function extractFeaturesFromMagnitudes(magnitudes: number[]): number[] {
+    if (magnitudes.length === 0) return new Array(FEATURE_VECTOR_SIZE).fill(0);
+
     const featureVector: number[] = new Array(FEATURE_VECTOR_SIZE).fill(0);
-    const step = Math.floor(magnitudes.length / FEATURE_VECTOR_SIZE);
-    if (step < 1) {
-        for(let i=0; i<FEATURE_VECTOR_SIZE; i++){
-            featureVector[i] = magnitudes[i] || 0;
-        }
-        return featureVector;
-    }
+    const step = Math.max(1, Math.floor(magnitudes.length / FEATURE_VECTOR_SIZE));
+
     for (let i = 0; i < FEATURE_VECTOR_SIZE; i++) {
         const slice = magnitudes.slice(i * step, (i + 1) * step);
         if (slice.length > 0) {
@@ -217,25 +214,6 @@ export function extractFeaturesFromMagnitudes(magnitudes: number[]): number[] {
     return featureVector;
 }
 
-interface AdvancedFeatures {
-  spectralCentroid: number;
-  spectralRolloff: number;
-  spectralFlux: number;
-  zeroCrossingRate: number;
-  rms: number;
-  peak: number;
-  crest: number;
-  spectralSpread: number;
-  spectralFlatness: number;
-  spectralSlope: number;
-  harmonicRatio: number;
-  noiseRatio: number;
-  tonalPower: number;
-  spectralContrast: number[];  // 7 valores
-  spectralBandEnergy: number[]; // 8 valores
-  temporalFeatures: number[];   // 4 valores
-}
-
 // Función principal mejorada para extraer características ML
 export const extractMLFeatures = (
   magnitudes: number[], 
@@ -243,162 +221,45 @@ export const extractMLFeatures = (
   previousAmplitudes: number[], 
   sampleRate: number
 ): number[] => {
-  const features: number[] = new Array(FEATURE_VECTOR_SIZE).fill(0);
-  
-  try {
-    // Convertir datos raw a amplitudes normalizadas
-    const amplitudes = convertRawToAmplitudes(rawData);
-    
-    // Extraer características avanzadas
-    const advancedFeatures = extractAdvancedFeatures(magnitudes, amplitudes, previousAmplitudes, sampleRate);
-    
-    // Mapear a vector de 32 características
-    const featureVector = mapToFeatureVector(advancedFeatures);
-    
-    // Copiar al array de salida
-    for (let i = 0; i < Math.min(FEATURE_VECTOR_SIZE, featureVector.length); i++) {
-      features[i] = featureVector[i];
-    }
-    
-    return features;
-  } catch (error) {
-    console.warn('Error extracting ML features:', error);
-    // Fallback a extracción básica
-    return extractBasicFeatures(magnitudes, rawData, sampleRate);
+  if(magnitudes.length === 0) {
+    return new Array(FEATURE_VECTOR_SIZE).fill(0);
   }
-};
 
-// Convertir datos raw a amplitudes normalizadas
-function convertRawToAmplitudes(rawData: Uint8Array): number[] {
-  const amplitudes: number[] = [];
-  // The rawData is a byte stream of 16-bit PCM values.
-  // We need to iterate through it, taking two bytes at a time.
-  for (let i = 0; i < rawData.length; i += 2) {
-    // Combine the two bytes into a single 16-bit sample (little-endian).
-    let sample = rawData[i] | (rawData[i + 1] << 8);
-    
-    // Interpret the 16-bit sample as a signed integer.
-    // If the most significant bit is 1, it's a negative number.
-    if (sample > 32767) {
-      sample -= 65536;
-    }
-    
-    // Normalize the sample to the range [-1, 1].
-    amplitudes.push(sample / 32768.0);
-  }
-  return amplitudes;
-}
-
-// Extractor de características avanzadas
-function extractAdvancedFeatures(
-  magnitudes: number[], 
-  amplitudes: number[], 
-  previousAmplitudes: number[], 
-  sampleRate: number
-): AdvancedFeatures {
-  
-  const N = magnitudes.length;
+  // Basic spectral features
   const nyquist = sampleRate / 2;
-  
-  // 1. Centroide espectral
   const spectralCentroid = calculateSpectralCentroid(magnitudes, nyquist);
-  
-  // 2. Rolloff espectral (85% de energía)
   const spectralRolloff = calculateSpectralRolloff(magnitudes, nyquist, 0.85);
-  
-  // 3. Flujo espectral
-  const spectralFlux = calculateSpectralFlux(magnitudes, previousAmplitudes);
-  
-  // 4. Tasa de cruces por cero
-  const zeroCrossingRate = calculateZeroCrossingRate(amplitudes);
-  
-  // 5. RMS (Root Mean Square)
-  const rms = calculateRMS(amplitudes);
-  
-  // 6. Valor pico
-  const peak = Math.max(...amplitudes.map(Math.abs));
-  
-  // 7. Factor de cresta
-  const crest = rms > 0 ? peak / rms : 0;
-  
-  // 8. Dispersión espectral
-  const spectralSpread = calculateSpectralSpread(magnitudes, spectralCentroid, nyquist);
-  
-  // 9. Planitud espectral
   const spectralFlatness = calculateSpectralFlatness(magnitudes);
   
-  // 10. Pendiente espectral
-  const spectralSlope = calculateSpectralSlope(magnitudes, nyquist);
-  
-  // 11-12. Ratio armónico y de ruido
-  const { harmonicRatio, noiseRatio } = calculateHarmonicNoiseRatio(magnitudes);
-  
-  // 13. Potencia tonal
-  const tonalPower = calculateTonalPower(magnitudes);
-  
-  // 14-20. Contraste espectral (7 bandas)
-  const spectralContrast = calculateSpectralContrast(magnitudes, 7);
-  
-  // 21-28. Energía por bandas de frecuencia (8 bandas)
-  const spectralBandEnergy = calculateBandEnergy(magnitudes, 8);
-  
-  // 29-32. Características temporales
-  const temporalFeatures = calculateTemporalFeatures(amplitudes, previousAmplitudes);
-  
-  return {
+  // Aggregate features
+  const rms = calculateRMS(magnitudes);
+  const totalEnergy = magnitudes.reduce((sum, mag) => sum + mag * mag, 0);
+
+  // Create a simplified feature vector
+  let features = [
     spectralCentroid,
     spectralRolloff,
-    spectralFlux,
-    zeroCrossingRate,
-    rms,
-    peak,
-    crest,
-    spectralSpread,
     spectralFlatness,
-    spectralSlope,
-    harmonicRatio,
-    noiseRatio,
-    tonalPower,
-    spectralContrast,
-    spectralBandEnergy,
-    temporalFeatures
-  };
-}
+    rms,
+    totalEnergy,
+    ...extractFeaturesFromMagnitudes(magnitudes).slice(5) // Add binned averages
+  ];
+  
+  // Normalize and ensure correct length
+  const finalFeatures = features.slice(0, FEATURE_VECTOR_SIZE);
+  while(finalFeatures.length < FEATURE_VECTOR_SIZE) {
+    finalFeatures.push(0);
+  }
+  
+  const maxVal = Math.max(...finalFeatures.map(f => Math.abs(f)));
+  if (maxVal > 0) {
+    return finalFeatures.map(v => v / maxVal);
+  }
 
-// Mapear características avanzadas a vector de 32 elementos
-function mapToFeatureVector(features: AdvancedFeatures): number[] {
-  const vector: number[] = [];
-  
-  // Características espectrales básicas (13 elementos)
-  vector.push(
-    features.spectralCentroid,
-    features.spectralRolloff,
-    features.spectralFlux,
-    features.zeroCrossingRate,
-    features.rms,
-    features.peak,
-    features.crest,
-    features.spectralSpread,
-    features.spectralFlatness,
-    features.spectralSlope,
-    features.harmonicRatio,
-    features.noiseRatio,
-    features.tonalPower
-  );
-  
-  // Contraste espectral (7 elementos)
-  vector.push(...features.spectralContrast);
-  
-  // Energía por bandas (8 elementos)
-  vector.push(...features.spectralBandEnergy);
-  
-  // Características temporales (4 elementos)
-  vector.push(...features.temporalFeatures);
-  
-  return vector.slice(0, 32); // Asegurar exactamente 32 elementos
-}
+  return finalFeatures;
+};
 
-// Funciones de cálculo específicas
+// --- Helper functions for feature extraction ---
 
 function calculateSpectralCentroid(magnitudes: number[], nyquist: number): number {
   let weightedSum = 0;
@@ -415,6 +276,7 @@ function calculateSpectralCentroid(magnitudes: number[], nyquist: number): numbe
 
 function calculateSpectralRolloff(magnitudes: number[], nyquist: number, threshold: number): number {
   const totalEnergy = magnitudes.reduce((sum, mag) => sum + mag * mag, 0);
+  if(totalEnergy === 0) return 0;
   const targetEnergy = totalEnergy * threshold;
   
   let cumulativeEnergy = 0;
@@ -428,205 +290,36 @@ function calculateSpectralRolloff(magnitudes: number[], nyquist: number, thresho
   return nyquist;
 }
 
-function calculateSpectralFlux(current: number[], previous: number[]): number {
-  if (previous.length === 0) return 0;
-  
-  let flux = 0;
-  const minLength = Math.min(current.length, previous.length);
-  
-  for (let i = 0; i < minLength; i++) {
-    const diff = current[i] - previous[i];
-    if (diff > 0) flux += diff * diff;
-  }
-  
-  return Math.sqrt(flux / minLength);
-}
-
-function calculateZeroCrossingRate(amplitudes: number[]): number {
-  let crossings = 0;
-  
-  for (let i = 1; i < amplitudes.length; i++) {
-    if ((amplitudes[i] >= 0) !== (amplitudes[i-1] >= 0)) {
-      crossings++;
-    }
-  }
-  
-  return crossings / (amplitudes.length - 1);
-}
-
-function calculateRMS(amplitudes: number[]): number {
-  const sumSquares = amplitudes.reduce((sum, amp) => sum + amp * amp, 0);
-  return Math.sqrt(sumSquares / amplitudes.length);
-}
-
-function calculateSpectralSpread(magnitudes: number[], centroid: number, nyquist: number): number {
-  let weightedVariance = 0;
-  let magnitudeSum = 0;
-  
-  for (let i = 0; i < magnitudes.length; i++) {
-    const freq = (i * nyquist) / magnitudes.length;
-    const deviation = freq - centroid;
-    weightedVariance += deviation * deviation * magnitudes[i];
-    magnitudeSum += magnitudes[i];
-  }
-  
-  return magnitudeSum > 0 ? Math.sqrt(weightedVariance / magnitudeSum) : 0;
-}
 
 function calculateSpectralFlatness(magnitudes: number[]): number {
-  let geometricMean = 1;
+  let geometricMean = 0;
   let arithmeticMean = 0;
   let count = 0;
   
   for (const mag of magnitudes) {
     if (mag > 0) {
-      geometricMean *= Math.pow(mag, 1 / magnitudes.length);
+      geometricMean += Math.log(mag);
       arithmeticMean += mag;
       count++;
     }
   }
   
+  if (count === 0) return 0;
+  
+  geometricMean = Math.exp(geometricMean / count);
   arithmeticMean /= count;
   return arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
 }
 
-function calculateSpectralSlope(magnitudes: number[], nyquist: number): number {
-  let sumXY = 0, sumX = 0, sumY = 0, sumX2 = 0;
-  const n = magnitudes.length;
-  
-  for (let i = 0; i < n; i++) {
-    const x = (i * nyquist) / n; // frecuencia
-    const y = magnitudes[i];     // magnitud
-    
-    sumXY += x * y;
-    sumX += x;
-    sumY += y;
-    sumX2 += x * x;
-  }
-  
-  const denominator = n * sumX2 - sumX * sumX;
-  return denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
+function calculateRMS(amplitudes: number[]): number {
+  if(amplitudes.length === 0) return 0;
+  const sumSquares = amplitudes.reduce((sum, amp) => sum + amp * amp, 0);
+  return Math.sqrt(sumSquares / amplitudes.length);
 }
 
-function calculateHarmonicNoiseRatio(magnitudes: number[]): { harmonicRatio: number, noiseRatio: number } {
-  // Simplificación: basado en picos vs valle promedio
-  const sortedMags = [...magnitudes].sort((a, b) => b - a);
-  const peakEnergy = sortedMags.slice(0, Math.floor(sortedMags.length * 0.1)).reduce((a, b) => a + b, 0);
-  const totalEnergy = magnitudes.reduce((a, b) => a + b, 0);
-  
-  const harmonicRatio = totalEnergy > 0 ? peakEnergy / totalEnergy : 0;
-  const noiseRatio = 1 - harmonicRatio;
-  
-  return { harmonicRatio, noiseRatio };
-}
 
-function calculateTonalPower(magnitudes: number[]): number {
-  // Potencia de componentes tonales vs total
-  let tonalPower = 0;
-  const threshold = Math.max(...magnitudes) * 0.1;
-  
-  for (const mag of magnitudes) {
-    if (mag > threshold) {
-      tonalPower += mag * mag;
-    }
-  }
-  
-  const totalPower = magnitudes.reduce((sum, mag) => sum + mag * mag, 0);
-  return totalPower > 0 ? tonalPower / totalPower : 0;
-}
-
-function calculateSpectralContrast(magnitudes: number[], numBands: number): number[] {
-  const bandSize = Math.floor(magnitudes.length / numBands);
-  const contrasts: number[] = [];
-  
-  for (let band = 0; band < numBands; band++) {
-    const start = band * bandSize;
-    const end = Math.min(start + bandSize, magnitudes.length);
-    const bandMags = magnitudes.slice(start, end);
-    
-    if (bandMags.length > 0) {
-      const sortedBand = [...bandMags].sort((a, b) => b - a);
-      const peakMean = sortedBand.slice(0, Math.max(1, Math.floor(sortedBand.length * 0.2)))
-                                 .reduce((a, b) => a + b, 0) / Math.max(1, Math.floor(sortedBand.length * 0.2));
-      const valleyMean = sortedBand.slice(Math.floor(sortedBand.length * 0.8))
-                                   .reduce((a, b) => a + b, 0) / Math.max(1, sortedBand.length - Math.floor(sortedBand.length * 0.8));
-      
-      contrasts.push(valleyMean > 0 ? Math.log(peakMean / valleyMean) : 0);
-    } else {
-      contrasts.push(0);
-    }
-  }
-  
-  return contrasts;
-}
-
-function calculateBandEnergy(magnitudes: number[], numBands: number): number[] {
-  const bandSize = Math.floor(magnitudes.length / numBands);
-  const energies: number[] = [];
-  
-  for (let band = 0; band < numBands; band++) {
-    const start = band * bandSize;
-    const end = Math.min(start + bandSize, magnitudes.length);
-    
-    let energy = 0;
-    for (let i = start; i < end; i++) {
-      energy += magnitudes[i] * magnitudes[i];
-    }
-    
-    energies.push(energy / (end - start));
-  }
-  
-  return energies;
-}
-
-function calculateTemporalFeatures(current: number[], previous: number[]): number[] {
-  const features: number[] = [];
-  
-  // 1. Cambio de energía
-  const currentEnergy = current.reduce((sum, amp) => sum + amp * amp, 0);
-  const previousEnergy = previous.length > 0 ? previous.reduce((sum, amp) => sum + amp * amp, 0) : currentEnergy;
-  const energyChange = previousEnergy > 0 ? (currentEnergy - previousEnergy) / previousEnergy : 0;
-  features.push(energyChange);
-  
-  // 2. Autocorrelación en lag=1
-  let autocorr = 0;
-  if (current.length > 1) {
-    for (let i = 1; i < current.length; i++) {
-      autocorr += current[i] * current[i-1];
-    }
-    autocorr /= (current.length - 1);
-  }
-  features.push(autocorr);
-  
-  // 3. Varianza de amplitudes
-  const mean = current.reduce((a, b) => a + b, 0) / current.length;
-  const variance = current.reduce((sum, amp) => sum + (amp - mean) * (amp - mean), 0) / current.length;
-  features.push(variance);
-  
-  // 4. Asimetría (skewness)
-  const std = Math.sqrt(variance);
-  let skewness = 0;
-  if (std > 0) {
-    skewness = current.reduce((sum, amp) => sum + Math.pow((amp - mean) / std, 3), 0) / current.length;
-  }
-  features.push(skewness);
-  
-  return features;
-}
-
-// Función de fallback para extracción básica
-function extractBasicFeatures(magnitudes: number[], rawData: Uint8Array, sampleRate: number): number[] {
-  const features: number[] = new Array(FEATURE_VECTOR_SIZE).fill(0);
-  
-  // Usar magnitudes FFT básicas y rellenar
-  for (let i = 0; i < Math.min(FEATURE_VECTOR_SIZE, magnitudes.length); i++) {
-    features[i] = magnitudes[i];
-  }
-  
-  return features;
-}
 export const calculateMahalanobisDistance = (features: number[], referenceState: { mean: number[], covariance: number[][], initialized: boolean }): number => {
-    if (!referenceState.initialized) return 0;
+    if (!referenceState.initialized || features.length === 0) return 0;
     
     const diff = features.map((feat, i) => feat - referenceState.mean[i]);
     
@@ -645,5 +338,3 @@ export const calculateMahalanobisDistance = (features: number[], referenceState:
 
 // Inicializar base de datos al cargar
 initializeQuantumDatabase();
-
-    

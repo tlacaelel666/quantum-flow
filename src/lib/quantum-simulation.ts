@@ -19,6 +19,8 @@ interface QuantumStatistics {
   quantum_fidelity: number;
   von_neumann_entropy: number;
   state_purity: number;
+  expected_position?: number;
+  parity?: number;
 }
 
 // Función mejorada para calcular estadísticas cuánticas
@@ -26,7 +28,8 @@ function calculateQuantumStatistics(
   counts: Record<number, number>, 
   shots: number,
   currentFeatures: number[] = [],
-  quantumAmplitudes: number[] = []
+  quantumAmplitudes: number[] = [],
+  newMetrics: { expected_position?: number, parity?: number } = {}
 ): QuantumStatistics {
   
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -42,7 +45,8 @@ function calculateQuantumStatistics(
       coherence_measure: 0,
       quantum_fidelity: 1,
       von_neumann_entropy: 0,
-      state_purity: 1
+      state_purity: 1,
+      ...newMetrics
     };
   }
 
@@ -101,7 +105,8 @@ function calculateQuantumStatistics(
     coherence_measure: coherenceMeasure,
     quantum_fidelity: quantumFidelity,
     von_neumann_entropy: vonNeumannEntropy,
-    state_purity: statePurity
+    state_purity: statePurity,
+    ...newMetrics
   };
 }
 
@@ -304,63 +309,10 @@ export function calculateStatistics(
   counts: Record<number, number>, 
   shots: number,
   currentFeatures: number[] = [],
-  quantumAmplitudes: number[] = []
+  quantumAmplitudes: number[] = [],
+  newMetrics: { expected_position?: number, parity?: number } = {}
 ): QuantumStatistics {
-  return calculateQuantumStatistics(counts, shots, currentFeatures, quantumAmplitudes);
-}
-
-// Función para reiniciar el historial
-export function resetMeasurementHistory(): void {
-  previousAmplitudes = [];
-  previousQuantumStates = [];
-  measurementHistory = [];
-}
-
-// Función para obtener estadísticas del historial
-export function getHistoryStatistics(): {
-  totalMeasurements: number;
-  averageFeatures: number[];
-  featureVariance: number[];
-} {
-  if (measurementHistory.length === 0) {
-    return {
-      totalMeasurements: 0,
-      averageFeatures: [],
-      featureVariance: []
-    };
-  }
-
-  const n = measurementHistory.length;
-  const featureLength = measurementHistory[0].features.length;
-  
-  // Calcular promedios
-  const averageFeatures = new Array(featureLength).fill(0);
-  for (const entry of measurementHistory) {
-    for (let i = 0; i < featureLength; i++) {
-      averageFeatures[i] += entry.features[i] || 0;
-    }
-  }
-  for (let i = 0; i < featureLength; i++) {
-    averageFeatures[i] /= n;
-  }
-
-  // Calcular varianzas
-  const featureVariance = new Array(featureLength).fill(0);
-  for (const entry of measurementHistory) {
-    for (let i = 0; i < featureLength; i++) {
-      const diff = (entry.features[i] || 0) - averageFeatures[i];
-      featureVariance[i] += diff * diff;
-    }
-  }
-  for (let i = 0; i < featureLength; i++) {
-    featureVariance[i] /= n;
-  }
-
-  return {
-    totalMeasurements: n,
-    averageFeatures,
-    featureVariance
-  };
+  return calculateQuantumStatistics(counts, shots, currentFeatures, quantumAmplitudes, newMetrics);
 }
 
 function _normalizeCounts(counts: Record<number, number>, totalShots: number): Record<number, number> {
@@ -396,11 +348,13 @@ async function _runAcousticProcessing(
   referenceState: ReferenceState,
   logs: string[]
 ): Promise<{ 
-  initialState?: Record<number, number>, 
+  initialState?: number[], 
   mahalanobis_distance?: number,
   spectral_flux?: number,
   newReferenceState?: ReferenceState,
-  features?: number[]
+  features?: number[],
+  evolvedState?: number[],
+  observables?: { expected_position: number, parity: number }
 }> {
     logs.push(`[INFO] Starting acoustic processing. Reference initialized: ${referenceState.initialized}`);
     
@@ -408,6 +362,10 @@ async function _runAcousticProcessing(
     const f = new FFT(fftSize);
     const fftResult = f.createComplexArray();
     const pcmTypedArray = new Float32Array(audioData.pcmData);
+    if(pcmTypedArray.length === 0) {
+      logs.push('[ERROR] PCM data is empty. Aborting acoustic processing.');
+      return { initialState: [], features: [] };
+    }
     f.realTransform(fftResult, pcmTypedArray);
     f.completeSpectrum(fftResult);
     
@@ -445,39 +403,72 @@ async function _runAcousticProcessing(
     const mahalanobis_distance = calculateMahalanobisDistanceWithReference(features, referenceState);
     logs.push(`[DATA] Mahalanobis Distance: ${mahalanobis_distance}`);
     
-    const spectral_flux = features[2]; // Index 2 is spectral flux from extractMLFeatures
-    logs.push(`[DATA] Spectral Flux: ${spectral_flux.toFixed(4)}`);
-
-    const inputFeatures = extractFeaturesFromMagnitudes(magnitudes);
-    logs.push(`[DATA] Extracted live audio feature vector (for pattern matching): ${JSON.stringify(inputFeatures.map(f=>f.toFixed(3)))}`);
-
-    const matchResult = findSimilarPattern(inputFeatures);
+    // --- LINDBLAD EVOLUTION ---
+    const N = 1 << config.num_qubits; // Truncation to qubit basis size
+    const gamma = config.noise_level; // Dissipation rate
     
-    let audioAmplitudes: Record<number, number> = {};
-    
-    if (matchResult) {
-        logs.push(`[INFO] Found similar pattern with similarity ${matchResult.similarity.toFixed(4)}.`);
-        matchResult.pattern.quantum_states.forEach(state => {
-            const stateIndex = parseInt(state.qubit_state, 2);
-            audioAmplitudes[stateIndex] = state.amplitude;
-        });
-        logs.push(`[INFO] Using matched pattern's amplitudes for modulation.`);
-    } else {
-        logs.push(`[WARN] No similar pattern found. Using direct magnitudes for modulation.`);
-        const numStates = 1 << config.num_qubits;
-        magnitudes.slice(0, numStates).forEach((mag, i) => {
-            audioAmplitudes[i] = mag;
-        });
+    // 1. Prepare initial state from features
+    let initialState = features.slice(0, N);
+    let norm = Math.sqrt(initialState.reduce((sum, x) => sum + x * x, 0));
+    if (norm > 0) {
+      initialState = initialState.map(x => x / norm);
     }
+    logs.push(`[INFO] Prepared initial quantum state from audio features.`);
 
-    previousAmplitudes = magnitudes;
+    // 2. Evolve state using Lindblad equation (simplified time-step evolution)
+    // dρ/dt ≈ (ρ(t+Δt) - ρ(t)) / Δt
+    // We simulate a single time step Δt=1 for simplicity
+    const dt = 1.0; 
+    
+    // The density matrix ρ is diagonal in this simplified model: ρ_ij = δ_ij * |ψ_i|^2
+    const rho = initialState.map(amp => amp * amp);
 
-    return { initialState: audioAmplitudes, mahalanobis_distance, spectral_flux, features };
+    // Apply Lindblad dynamics
+    const evolvedRho = rho.map((rho_n, n) => {
+      // Dissipative part: γ(aρa† - 1/2{a†a,ρ})
+      // Action of `a` on |n> is sqrt(n)|n-1>
+      // Action of `a†` on |n> is sqrt(n+1)|n+1>
+      const creation_term = (n > 0) ? gamma * (n) * (rho[n - 1] || 0) : 0; // from a†ρa term, index shifting
+      const annihilation_term = -gamma * n * rho_n;
+      const creation_annihilation_term = -gamma * n * rho_n;
+
+      return Math.max(0, rho_n + dt * (creation_term + annihilation_term + creation_annihilation_term));
+    });
+
+    // Normalize evolved density matrix
+    const trace = evolvedRho.reduce((sum, p) => sum + p, 0);
+    const finalRho = trace > 0 ? evolvedRho.map(p => p / trace) : evolvedRho;
+    
+    const evolvedStateAmplitudes = finalRho.map(p => Math.sqrt(p));
+    logs.push(`[INFO] Evolved state with dissipation rate (gamma) = ${gamma}.`);
+
+    // 3. Calculate observables
+    let expected_position = 0; // <x>
+    let parity = 0; // <P>
+    for (let n = 0; n < N; n++) {
+      // <x> ∝ <a + a†> - This is zero for diagonal density matrix
+      // Let's calculate <x^2> instead for a non-zero value, which is related to energy
+      // <x^2> ∝ <(a+a†)^2> = <a^2 + a†^2 + aa† + a†a> = <2a†a + 1>
+      expected_position += (2 * n + 1) * finalRho[n];
+      
+      // Parity P = (-1)^(a†a)
+      parity += Math.pow(-1, n) * finalRho[n];
+    }
+    logs.push(`[DATA] Observables: <x^2> (Energy) = ${expected_position.toFixed(4)}, <P> (Parity) = ${parity.toFixed(4)}`);
+
+    return { 
+      initialState: initialState, 
+      mahalanobis_distance, 
+      spectral_flux: features[2], 
+      features, 
+      evolvedState: evolvedStateAmplitudes, 
+      observables: { expected_position, parity } 
+    };
 }
 
 
 export async function runSimulation(config: CircuitConfig, audioPayload?: AudioPayload, referenceState?: ReferenceState): Promise<SimulationResults> {
-  await new Promise(res => setTimeout(res, 1000 + Math.random() * 1500));
+  await new Promise(res => setTimeout(res, 500 + Math.random() * 500));
 
   const logs: string[] = [];
   logs.push(`[INFO] QUOREMIND session started at ${new Date().toISOString()}`);
@@ -499,78 +490,69 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     };
   }
 
-  let baseAmplitudes: Record<number, number> = {};
+  let finalAmplitudes: number[] = [];
   let circuit_depth = config.depth;
   const num_states = 1 << config.num_qubits;
-
-  if (config.circuit_type === 'bell' && config.num_qubits >= 2) {
-    circuit_depth = 2;
-    baseAmplitudes[0] = 1;
-    const bell_state = 1 | (1 << (config.num_qubits - 1));
-    baseAmplitudes[bell_state] = 1;
-  } else if (config.circuit_type === 'ghz' && config.num_qubits > 0) {
-    circuit_depth = config.num_qubits;
-    baseAmplitudes[0] = 1;
-    const all_ones_state = (1 << config.num_qubits) - 1;
-    baseAmplitudes[all_ones_state] = 1;
-  } else if (config.circuit_type === 'qft') {
-    circuit_depth = config.num_qubits;
-    for (let i = 0; i < num_states; i++) {
-      baseAmplitudes[i] = 1; // Equal amplitude before QFT
-    }
-  } else { // random circuit
-    for (let i = 0; i < num_states; i++) {
-      baseAmplitudes[i] = Math.random();
-    }
-  }
-  
-  logs.push(`[INFO] Generated base amplitudes for ${config.circuit_type} circuit. Depth: ${circuit_depth}.`);
-
-  let finalAmplitudes = { ...baseAmplitudes };
   let features: number[] = [];
+  let newMetrics = {};
 
   if (isAcousticRun && audioPayload && referenceState) {
-    logs.push('[INFO] Applying acoustic modulation to base amplitudes.');
+    logs.push('[INFO] Running hybrid acoustic-quantum simulation.');
     const acousticResult = await _runAcousticProcessing(config, audioPayload, referenceState, logs);
-    const audioAmplitudes = acousticResult.initialState || {};
-    features = acousticResult.features || [];
     
-    // Modulate base amplitudes with audio amplitudes
-    const modulatedAmplitudes: Record<number, number> = {};
-    for (let i = 0; i < num_states; i++) {
-      const baseAmp = baseAmplitudes[i] || 0;
-      const audioAmp = audioAmplitudes[i] || 0;
-      modulatedAmplitudes[i] = baseAmp * (1 + audioAmp) / 2; // Mix the amplitudes
+    finalAmplitudes = acousticResult.evolvedState || [];
+    features = acousticResult.features || [];
+    if(acousticResult.observables) {
+        newMetrics = {
+            expected_position: acousticResult.observables.expected_position,
+            parity: acousticResult.observables.parity
+        };
     }
-    finalAmplitudes = modulatedAmplitudes;
-    logs.push('[INFO] Modulation complete.');
+    
+    logs.push('[INFO] Acoustic evolution complete.');
+
+  } else { // Standard, non-acoustic simulation
+      let baseAmplitudes: Record<number, number> = {};
+      if (config.circuit_type === 'bell' && config.num_qubits >= 2) {
+        circuit_depth = 2;
+        baseAmplitudes[0] = 1;
+        const bell_state = 1 | (1 << (config.num_qubits - 1));
+        baseAmplitudes[bell_state] = 1;
+      } else if (config.circuit_type === 'ghz' && config.num_qubits > 0) {
+        circuit_depth = config.num_qubits;
+        baseAmplitudes[0] = 1;
+        const all_ones_state = (1 << config.num_qubits) - 1;
+        baseAmplitudes[all_ones_state] = 1;
+      } else if (config.circuit_type === 'qft') {
+        circuit_depth = config.num_qubits;
+        for (let i = 0; i < num_states; i++) {
+          baseAmplitudes[i] = 1; // Equal amplitude before QFT
+        }
+      } else { // random circuit
+        for (let i = 0; i < num_states; i++) {
+          baseAmplitudes[i] = Math.random();
+        }
+      }
+      
+      const ampValues = Object.values(baseAmplitudes);
+      const norm = Math.sqrt(ampValues.reduce((s,v) => s + v*v, 0));
+      if(norm > 0) {
+          finalAmplitudes = Array(num_states).fill(0);
+          for(const state in baseAmplitudes) {
+              finalAmplitudes[Number(state)] = baseAmplitudes[state] / norm;
+          }
+      }
+      logs.push(`[INFO] Generated base amplitudes for ${config.circuit_type} circuit. Depth: ${circuit_depth}.`);
   }
 
   // Convert amplitudes to probabilities (counts)
   const counts: Record<number, number> = {};
-  for (const state in finalAmplitudes) {
-    counts[state] = Math.pow(finalAmplitudes[state], 2); // Probability is amplitude squared
-  }
-
-  if(config.noise_level > 0) {
-    logs.push(`[WARN] Applying noise level of ${config.noise_level}.`);
-    const noisyCounts = { ...counts };
-    for (const state in noisyCounts) {
-      const prob = noisyCounts[state];
-      const noise_effect = (Math.random() - 0.5) * prob * config.noise_level;
-      noisyCounts[state] = Math.max(0, prob + noise_effect);
-    }
-    // Add some random noise states
-    const numNoiseStates = Math.floor(num_states * config.noise_level * 0.1);
-    for(let i=0; i<numNoiseStates; i++) {
-        const noisyState = Math.floor(Math.random() * num_states);
-        noisyCounts[noisyState] = (noisyCounts[noisyState] || 0) + Math.random() * config.noise_level * 0.05;
-    }
-    finalAmplitudes = noisyCounts;
-  }
+  finalAmplitudes.forEach((amp, state) => {
+    counts[state] = Math.pow(amp, 2);
+  });
   
-  const final_counts = _normalizeCounts(finalAmplitudes, config.shots);
-  const stats = calculateStatistics(final_counts, config.shots, features, Object.values(finalAmplitudes));
+  const final_counts = _normalizeCounts(counts, config.shots);
+  const stats = calculateStatistics(final_counts, config.shots, features, finalAmplitudes, newMetrics);
 
   logs.push(`[SUCCESS] Simulation complete. Most frequent state: ${stats.most_frequent_state}.`);
 

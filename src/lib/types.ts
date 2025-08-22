@@ -37,6 +37,8 @@ export interface SimulationResults {
     quantum_fidelity: number;
     von_neumann_entropy: number;
     state_purity: number;
+    expected_position?: number;
+    parity?: number;
   };
   logs: string[];
   referenceState?: ReferenceState;
