@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'coremind.website',
+        hostname: '',
         port: '',
         pathname: '/**',
       },

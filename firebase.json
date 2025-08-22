@@ -1,13 +1,59 @@
 {
-  "apphosting": {
-    "backendId": "quantum-flow-pgx5p",
-    "rootDir": "https://console.firebase.google.com/project/quantum-flow-pgx5p",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log",
-      "functions"
-    ]
-  }
+  "apphosting": [
+    {
+      "backendId": "quantum-flow-pgx5p",
+      "rootDir": "https://console.firebase.google.com/project/quantum-flow-pgx5p",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    },
+    {
+      "backendId": "quantum-flow-pgx5p",
+      "rootDir": "/home/user/studio/firebase.json",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    },
+    {
+      "backendId": "quantum-flow-pgx5p",
+      "rootDir": "home/user/studio/firebase.json",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    },
+    {
+      "backendId": "quantum-flow-pgx5p",
+      "rootDir": "firebase.json",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    },
+    {
+      "backendId": "quantum-flow-pgx5p",
+      "rootDir": "apphosting.yaml",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "functions"
+      ]
+    }
+  ]
 }
