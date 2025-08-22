@@ -93,7 +93,8 @@ async function _runAcousticProcessing(config: CircuitConfig, audioData: AudioPay
     if (referenceState && !referenceState.initialized) {
         logs.push(`[INFO] Calibrating... Storing reference audio profile.`);
         const mean = mlFeatures;
-        const variance = mlFeatures.map((val) => val * val); // simplified
+        // Simplified variance for this example. In a real scenario, you'd collect multiple samples.
+        const variance = mlFeatures.map(() => 1); // Start with unit variance
         returnedReferenceState = {
             mean: mean,
             covariance: variance, 
@@ -178,21 +179,36 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     }
   } else if (config.circuit_type === 'qft' || (config.circuit_type === 'acoustic' && audioPayload)) {
     circuit_depth = config.num_qubits;
-    let initialState: Record<number, number> = { 0: 1 }; // Default for QFT
+    let initialState: Record<number, number> = {}; 
+
     if (config.circuit_type === 'acoustic' && audioPayload) {
         const acousticResult = await _runAcousticProcessing(config, audioPayload, logs, referenceState);
         initialState = acousticResult.initialState;
         returnedReferenceState = acousticResult.returnedReferenceState;
+    } else { // QFT
+        const num_possible_states = 1 << config.num_qubits;
+        for (let i = 0; i < num_possible_states; i++) {
+            initialState[i] = 1; // Equal amplitude for QFT
+        }
     }
+
+    const totalInitialMagnitude = Object.values(initialState).reduce((sum, val) => sum + val, 0);
     
-    const num_possible_states = 1 << config.num_qubits;
-    const shots_per_state = config.shots / num_possible_states;
-    // The QFT creates a uniform superposition, so we distribute the shots evenly
-    for (let i = 0; i < num_possible_states; i++) {
-        // Apply noise by slightly randomizing the counts
-        const noise_effect = Math.round((Math.random() - 0.5) * shots_per_state * config.noise_level * 2);
-        counts[i] = Math.max(0, shots_per_state + noise_effect);
+    if (totalInitialMagnitude > 0) {
+        for (const state in initialState) {
+            const probability = initialState[state] / totalInitialMagnitude;
+            const noise_effect = (Math.random() - 0.5) * probability * config.noise_level;
+            const final_prob = Math.max(0, probability + noise_effect);
+            counts[state] = (counts[state] || 0) + Math.round(final_prob * config.shots);
+        }
+    } else { // Handle case with no audio input or all-zero initial state
+         const num_possible_states = 1 << config.num_qubits;
+         const shots_per_state = config.shots / num_possible_states;
+         for (let i = 0; i < num_possible_states; i++) {
+            counts[i] = Math.max(0, shots_per_state);
+        }
     }
+
   } else { 
     circuit_depth = config.depth; // random circuit
     let remaining_shots = config.shots;
