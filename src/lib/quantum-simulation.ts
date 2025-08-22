@@ -79,7 +79,9 @@ async function _runAcousticProcessing(
     const fftSize = Math.pow(2, Math.ceil(Math.log2(audioData.pcmData.length)));
     const f = new FFT(fftSize);
     const fftResult = f.createComplexArray();
-    f.realTransform(fftResult, audioData.pcmData);
+    // Ensure data is in a typed array for the FFT library
+    const pcmTypedArray = new Float32Array(audioData.pcmData);
+    f.realTransform(fftResult, pcmTypedArray);
     f.completeSpectrum(fftResult);
     
     logs.push(`[INFO] Performed FFT on ${audioData.pcmData.length} audio samples (padded to ${fftSize}).`);
@@ -157,8 +159,9 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
   logs.push(`[INFO] Starting simulation for ${config.circuit_type} circuit.`);
   logs.push(`[INFO] Configuration: ${config.num_qubits} qubits, ${config.shots} shots, noise=${config.noise_level}.`);
 
+  const isCalibrationRun = config.circuit_type === 'acoustic' && audioPayload && referenceState && !referenceState.initialized;
+
   if (config.circuit_type === 'acoustic' && audioPayload && referenceState) {
-    const isCalibrationRun = !referenceState.initialized;
     const acousticResult = await _runAcousticProcessing(config, audioPayload, referenceState, logs);
     
     if (isCalibrationRun) {
