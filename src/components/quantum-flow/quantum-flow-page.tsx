@@ -32,14 +32,14 @@ export default function QuantumFlowPage() {
     // Only clear previous results if it's not a calibration run
     if (!refState || refState.initialized) {
         setSimulationResults(null);
-        setTimeDomainData(null);
+        if (audioPayload) {
+          setTimeDomainData(audioPayload.rawData);
+        } else {
+          setTimeDomainData(null);
+        }
     }
     setAiAnalysis(null);
     
-    if (audioPayload) {
-      setTimeDomainData(audioPayload.rawData);
-    }
-
     try {
       const results = await getSimulation(config, audioPayload, refState);
       
@@ -90,14 +90,14 @@ export default function QuantumFlowPage() {
         const source = audioContext.createMediaStreamSource(stream);
         const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-        const pcmData: number[] = [];
+        const pcmDataList: number[] = [];
         const rawDataList: number[] = [];
         
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < inputData.length; i++) {
-                pcmData.push(inputData[i]);
-                // Convert float [-1, 1] to byte [0, 255]
+                pcmDataList.push(inputData[i]);
+                // Convert float [-1, 1] to byte [0, 255] for waveform display
                 rawDataList.push((inputData[i] + 1) * 127.5);
             }
         };
@@ -109,7 +109,10 @@ export default function QuantumFlowPage() {
             source.disconnect();
             processor.disconnect();
             stream.getTracks().forEach(track => track.stop());
+            
             const rawData = new Uint8Array(rawDataList);
+            const pcmData = new Float32Array(pcmDataList); // Ensure data is Float32Array
+            
             setTimeout(() => audioContext.close(), 500);
             resolve({ pcmData, rawData });
         }, 2000); // Record for 2 seconds
@@ -152,7 +155,7 @@ export default function QuantumFlowPage() {
         setIsRecording(false);
         toast({ title: "Procesando simulación acústica..." });
         // Pass the fully initialized reference state for the main simulation
-        await handleSimulate(config, audioPayload, referenceState.current);
+        await handleSimulate({ ...config, circuit_type: 'acoustic'}, audioPayload, referenceState.current);
     } catch (error) {
         console.error("Error capturing audio:", error);
         toast({
