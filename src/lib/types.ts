@@ -1,3 +1,4 @@
+
 export interface CircuitConfig {
   num_qubits: number;
   depth: number;
@@ -14,7 +15,7 @@ export interface ReferenceState {
 }
 
 export interface AudioPayload {
-  pcmData: number[];
+  pcmData: Float32Array;
   rawData: Uint8Array;
 }
 

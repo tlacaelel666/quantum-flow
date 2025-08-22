@@ -26,8 +26,7 @@ function calculateQuantumStatistics(
   counts: Record<number, number>, 
   shots: number,
   currentFeatures: number[] = [],
-  quantumAmplitudes: number[] = [],
-  referenceState: ReferenceState | undefined
+  quantumAmplitudes: number[] = []
 ): QuantumStatistics {
   
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
@@ -72,7 +71,7 @@ function calculateQuantumStatistics(
   const distributionUniformity = maxEntropy > 0 ? shannonEntropy / maxEntropy : 1;
 
   // 5. Distancia de Mahalanobis mejorada
-  const mahalanobisDistance = referenceState ? calculateMahalanobisDistanceWithReference(currentFeatures, referenceState) : 0;
+  const mahalanobisDistance = calculateMahalanobisDistance(currentFeatures, measurementHistory);
 
   // 6. Flujo espectral mejorado
   const spectralFlux = calculateEnhancedSpectralFlux(currentFeatures, previousAmplitudes);
@@ -105,6 +104,61 @@ function calculateQuantumStatistics(
     state_purity: statePurity
   };
 }
+
+// Calcular distancia de Mahalanobis con respecto al historial
+function calculateMahalanobisDistance(
+  currentFeatures: number[], 
+  history: Array<{features: number[], timestamp: number}>
+): number {
+  if (history.length < 2 || currentFeatures.length === 0) {
+    return 0;
+  }
+
+  const recentHistory = history.slice(-10); // Usar últimas 10 mediciones
+  const n = recentHistory.length;
+  const d = currentFeatures.length;
+
+  // Calcular media histórica
+  const mean = new Array(d).fill(0);
+  for (const entry of recentHistory) {
+    for (let i = 0; i < Math.min(d, entry.features.length); i++) {
+      mean[i] += entry.features[i];
+    }
+  }
+  for (let i = 0; i < d; i++) {
+    mean[i] /= n;
+  }
+
+  // Calcular matriz de covarianza
+  const covariance = Array(d).fill(null).map(() => Array(d).fill(0));
+  for (const entry of recentHistory) {
+    for (let i = 0; i < d; i++) {
+      for (let j = 0; j < d; j++) {
+        const di = (entry.features[i] || 0) - mean[i];
+        const dj = (entry.features[j] || 0) - mean[j];
+        covariance[i][j] += di * dj;
+      }
+    }
+  }
+  
+  // Normalizar covarianza
+  for (let i = 0; i < d; i++) {
+    for (let j = 0; j < d; j++) {
+      covariance[i][j] /= (n - 1);
+    }
+  }
+
+  // Calcular distancia de Mahalanobis (aproximación diagonal)
+  const diff = currentFeatures.map((val, i) => val - mean[i]);
+  let distance = 0;
+  for (let i = 0; i < d; i++) {
+    const variance = covariance[i][i] + 1e-10; // Evitar división por cero
+    distance += (diff[i] * diff[i]) / variance;
+  }
+
+  return Math.sqrt(distance);
+}
+
 
 // Calcular flujo espectral mejorado
 function calculateEnhancedSpectralFlux(
@@ -250,10 +304,9 @@ export function calculateStatistics(
   counts: Record<number, number>, 
   shots: number,
   currentFeatures: number[] = [],
-  quantumAmplitudes: number[] = [],
-  referenceState: ReferenceState | undefined
+  quantumAmplitudes: number[] = []
 ): QuantumStatistics {
-  return calculateQuantumStatistics(counts, shots, currentFeatures, quantumAmplitudes, referenceState);
+  return calculateQuantumStatistics(counts, shots, currentFeatures, quantumAmplitudes);
 }
 
 // Función para reiniciar el historial
@@ -440,7 +493,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
       ...config,
       counts: {},
       circuit_depth: 0,
-      statistics: calculateStatistics({}, 0, acousticResult.features, [], acousticResult.newReferenceState),
+      statistics: calculateStatistics({}, 0, acousticResult.features, []),
       logs,
       referenceState: acousticResult.newReferenceState,
     };
@@ -517,7 +570,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
   }
   
   const final_counts = _normalizeCounts(finalAmplitudes, config.shots);
-  const stats = calculateStatistics(final_counts, config.shots, features, Object.values(finalAmplitudes), referenceState);
+  const stats = calculateStatistics(final_counts, config.shots, features, Object.values(finalAmplitudes));
 
   logs.push(`[SUCCESS] Simulation complete. Most frequent state: ${stats.most_frequent_state}.`);
 
@@ -529,5 +582,3 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     logs,
   };
 }
-
-    
