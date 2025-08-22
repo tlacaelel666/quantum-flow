@@ -1,12 +1,14 @@
+
 'use client';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import PlotView from './plot-view';
+import WaveformDisplay from './waveform-display';
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SimulationResults } from "@/lib/types";
-import { FileText, Code, BarChartBig, BrainCircuit, List, Sparkles, Download } from 'lucide-react';
+import { FileText, Code, BarChartBig, BrainCircuit, List, Sparkles, Download, Waves } from 'lucide-react';
 import { exportToCsv } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 
@@ -96,9 +98,10 @@ type OutputPanelProps = {
   isAiLoading: boolean;
   onAnalyze: () => void;
   isSimulating: boolean;
+  timeDomainData: Uint8Array | null;
 };
 
-export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyze, isSimulating }: OutputPanelProps) {
+export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyze, isSimulating, timeDomainData }: OutputPanelProps) {
   if (isSimulating && !results) {
     return (
       <Card>
@@ -137,6 +140,8 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
     }
     exportToCsv(`quantum-flow-results.csv`, rows);
   };
+  
+  const hasAcousticData = results.circuit_type === 'acoustic' && timeDomainData;
 
   return (
     <Card className="border-accent/20">
@@ -166,10 +171,12 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
                     <TabsTrigger value="text"><FileText className="mr-2 h-4 w-4" />Texto</TabsTrigger>
                     <TabsTrigger value="plot"><BarChartBig className="mr-2 h-4 w-4" />Gráfico</TabsTrigger>
                     <TabsTrigger value="json"><Code className="mr-2 h-4 w-4" />JSON</TabsTrigger>
+                    {hasAcousticData && <TabsTrigger value="waveform"><Waves className="mr-2 h-4 w-4" />Forma de Onda</TabsTrigger>}
                 </TabsList>
                 <TabsContent value="text" className="mt-4"><TextView results={results} onDownloadCsv={handleDownloadCsv} /></TabsContent>
                 <TabsContent value="plot" className="mt-4"><PlotView results={results} /></TabsContent>
                 <TabsContent value="json" className="mt-4"><JsonView results={results} /></TabsContent>
+                {hasAcousticData && <TabsContent value="waveform" className="mt-4"><WaveformDisplay timeDomainData={timeDomainData} /></TabsContent>}
             </Tabs>
           </TabsContent>
           

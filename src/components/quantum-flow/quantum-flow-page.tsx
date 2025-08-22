@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef } from "react";
@@ -15,6 +16,7 @@ export default function QuantumFlowPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [timeDomainData, setTimeDomainData] = useState<Uint8Array | null>(null);
   const { toast } = useToast();
 
   // State for acoustic calibration
@@ -30,9 +32,14 @@ export default function QuantumFlowPage() {
     // Only clear previous results if it's not a calibration run
     if (!refState || refState.initialized) {
         setSimulationResults(null);
+        setTimeDomainData(null);
     }
     setAiAnalysis(null);
     
+    if (audioPayload) {
+      setTimeDomainData(audioPayload.rawData);
+    }
+
     try {
       const results = await getSimulation(config, audioPayload, refState);
       
@@ -84,11 +91,14 @@ export default function QuantumFlowPage() {
         const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
         const pcmData: number[] = [];
+        const rawDataList: number[] = [];
         
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < inputData.length; i++) {
                 pcmData.push(inputData[i]);
+                // Convert float [-1, 1] to byte [0, 255]
+                rawDataList.push((inputData[i] + 1) * 127.5);
             }
         };
 
@@ -99,10 +109,7 @@ export default function QuantumFlowPage() {
             source.disconnect();
             processor.disconnect();
             stream.getTracks().forEach(track => track.stop());
-            const rawData = new Uint8Array(pcmData.length);
-            for (let i = 0; i < pcmData.length; i++) {
-              rawData[i] = Math.max(0, Math.min(255, (pcmData[i] + 1) * 127.5));
-            }
+            const rawData = new Uint8Array(rawDataList);
             setTimeout(() => audioContext.close(), 500);
             resolve({ pcmData, rawData });
         }, 2000); // Record for 2 seconds
@@ -205,6 +212,7 @@ export default function QuantumFlowPage() {
         isAiLoading={isAiLoading}
         onAnalyze={handleAnalyze}
         isSimulating={isSimulating}
+        timeDomainData={timeDomainData}
       />
     </div>
   );
