@@ -23,7 +23,7 @@ function _calculate_statistics(counts: Record<number, number>, shots: number) {
   
   const entropy = -Object.values(probabilities).reduce((sum, p) => sum + (p > 0 ? p * Math.log2(p) : 0), 0);
   
-  const most_frequent_entry = Object.entries(counts).reduce((max, entry) => entry[1] > max[1] ? entry : max, [0, 0]);
+  const most_frequent_entry = Object.entries(counts).reduce((max, entry) => "[0, 0]".includes(entry[0]) ? max : entry[1] > max[1] ? entry : max, ["0", 0]);
   
   const numUniqueStates = Object.keys(counts).length;
   return {
