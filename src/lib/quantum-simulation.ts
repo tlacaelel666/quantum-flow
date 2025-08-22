@@ -1,3 +1,4 @@
+
 import type { CircuitConfig, SimulationResults, ReferenceState, AudioPayload } from './types';
 import FFT from 'fft.js';
 import { extractMLFeatures, calculateMahalanobisDistance, calculateSpectralFlux, FEATURE_VECTOR_SIZE } from './audio-features';
@@ -177,7 +178,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
         counts[noisy_state] = (counts[noisy_state] || 0) + Math.round(remaining_shots / 5);
       }
     }
-  } else if (config.circuit_type === 'qft' || (config.circuit_type === 'acoustic' && audioPayload)) {
+  } else if (config.circuit_type === 'qft' || config.circuit_type === 'acoustic') {
     circuit_depth = config.num_qubits;
     let initialState: Record<number, number> = {}; 
 
@@ -205,7 +206,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
          const num_possible_states = 1 << config.num_qubits;
          const shots_per_state = config.shots / num_possible_states;
          for (let i = 0; i < num_possible_states; i++) {
-            counts[i] = Math.max(0, shots_per_state);
+            counts[i] = Math.round(shots_per_state);
         }
     }
 
