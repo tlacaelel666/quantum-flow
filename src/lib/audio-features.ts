@@ -271,15 +271,21 @@ export const extractMLFeatures = (
 // Convertir datos raw a amplitudes normalizadas
 function convertRawToAmplitudes(rawData: Uint8Array): number[] {
   const amplitudes: number[] = [];
-  
-  // Convertir de Uint8 a valores signed y normalizar
-  for (let i = 0; i < rawData.length - 1; i += 2) {
-    // Combinar bytes para 16-bit sample
-    const sample = (rawData[i + 1] << 8) | rawData[i];
-    const signed = sample > 32767 ? sample - 65536 : sample;
-    amplitudes.push(signed / 32768.0); // Normalizar a [-1, 1]
+  // The rawData is a byte stream of 16-bit PCM values.
+  // We need to iterate through it, taking two bytes at a time.
+  for (let i = 0; i < rawData.length; i += 2) {
+    // Combine the two bytes into a single 16-bit sample (little-endian).
+    let sample = rawData[i] | (rawData[i + 1] << 8);
+    
+    // Interpret the 16-bit sample as a signed integer.
+    // If the most significant bit is 1, it's a negative number.
+    if (sample > 32767) {
+      sample -= 65536;
+    }
+    
+    // Normalize the sample to the range [-1, 1].
+    amplitudes.push(sample / 32768.0);
   }
-  
   return amplitudes;
 }
 
