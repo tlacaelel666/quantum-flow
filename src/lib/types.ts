@@ -1,5 +1,3 @@
-
-
 export interface CircuitConfig {
   num_qubits: number;
   depth: number;
@@ -34,6 +32,10 @@ export interface SimulationResults {
     distribution_uniformity: number;
     mahalanobis_distance: number;
     spectral_flux: number;
+    coherence_measure: number;
+    quantum_fidelity: number;
+    von_neumann_entropy: number;
+    state_purity: number;
   };
   logs: string[];
   referenceState?: ReferenceState;

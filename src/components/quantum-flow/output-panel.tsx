@@ -134,14 +134,16 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
 
   const handleDownloadCsv = () => {
     const rows = [["State", "Binary", "Count", "Probability"]];
-    for (const [state, count] of Object.entries(results.counts)) {
-      const prob = count / results.shots;
-      rows.push([state, parseInt(state).toString(2).padStart(results.num_qubits, '0'), count, prob]);
+    if (results.counts) {
+        for (const [state, count] of Object.entries(results.counts)) {
+          const prob = count / results.shots;
+          rows.push([state, parseInt(state).toString(2).padStart(results.num_qubits, '0'), count.toString(), prob.toString()]);
+        }
     }
     exportToCsv(`quantum-flow-results.csv`, rows);
   };
   
-  const hasAcousticData = results.circuit_type === 'acoustic' && timeDomainData;
+  const hasAcousticData = !!timeDomainData;
 
   return (
     <Card className="border-accent/20">
@@ -191,3 +193,5 @@ export default function OutputPanel({ results, aiAnalysis, isAiLoading, onAnalyz
     </Card>
   );
 }
+
+    

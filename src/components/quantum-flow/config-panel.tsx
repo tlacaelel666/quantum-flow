@@ -1,3 +1,4 @@
+
 'use client';
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Play, Settings2, Cpu, Repeat, Thermometer, Eye, Info, Mic } from 'lucide-react';
+import { Play, Settings2, Cpu, Repeat, Thermometer, Eye, Info, Mic, Waves } from 'lucide-react';
 import type { CircuitConfig } from '@/lib/types';
 
 const formSchema = z.object({
@@ -53,16 +54,6 @@ const circuitDescriptions: Record<string, { title: string, description: string, 
     description: "Genera un circuito con compuertas cuánticas aleatorias, a menudo utilizado para comparar hardware cuántico y explorar la dinámica cuántica caótica.",
     parameters: "El circuito se construye con compuertas aleatorias de un solo cúbit y de dos cúbits hasta una 'Profundidad de Circuito' especificada."
   },
-  acoustic: {
-    title: "Circuito Acústico",
-    description: "Utiliza la entrada del micrófono para generar un estado cuántico inicial basado en las características de frecuencia del sonido capturado.",
-    parameters: "Las amplitudes de frecuencia del análisis FFT del audio se utilizan para ponderar las probabilidades de los estados base de la simulación."
-  },
-  custom: {
-    title: "Circuito Personalizado",
-    description: "Esta opción te permitirá definir tu propio circuito cuántico.",
-    parameters: "Aún no implementado."
-  },
 };
 
 export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading, isRecording, isCalibrating, isCalibrated }: ConfigPanelProps) {
@@ -78,20 +69,12 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    if (values.circuit_type === 'acoustic') {
-      onAcousticSimulate(values);
-    } else {
-      onSimulate(values);
-    }
-  }
-  
   const getAcousticButtonText = () => {
     if (isCalibrating) return "Calibrando...";
     if (isRecording) return "Grabando...";
     if (isLoading) return "Simulando...";
     if (!isCalibrated) return "Calibrar Micrófono";
-    return "Grabar y Simular";
+    return "Modular con Audio";
   }
 
   const circuitType = form.watch('circuit_type');
@@ -107,7 +90,7 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <form onSubmit={(e) => e.preventDefault()} className="space-y-8">
             <div className="grid md:grid-cols-2 gap-8 items-start">
               <div className="space-y-8">
                 <FormField
@@ -125,8 +108,6 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
                           <SelectItem value="ghz">Estado GHZ</SelectItem>
                           <SelectItem value="qft">Transformada Cuántica de Fourier</SelectItem>
                           <SelectItem value="random">Circuito Aleatorio</SelectItem>
-                          <SelectItem value="acoustic">Circuito Acústico</SelectItem>
-                          <SelectItem value="custom" disabled>Personalizado (No Implementado)</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormItem>
@@ -223,22 +204,21 @@ export default function ConfigPanel({ onSimulate, onAcousticSimulate, isLoading,
               )}
             />
             
-            <Button type="submit" className="w-full" disabled={isLoading || isRecording || isCalibrating}>
-              {circuitType === 'acoustic' ? (
-                <>
-                  <Mic className="mr-2 h-4 w-4" />
-                  {getAcousticButtonText()}
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  {isLoading ? "Simulando..." : "Ejecutar Simulación"}
-                </>
-              )}
-            </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <Button onClick={() => onSimulate(form.getValues())} disabled={isLoading || isRecording || isCalibrating}>
+                <Play className="mr-2 h-4 w-4" />
+                {isLoading && !isRecording && !isCalibrating ? "Simulando..." : "Ejecutar Simulación Estándar"}
+              </Button>
+              <Button onClick={() => onAcousticSimulate(form.getValues())} disabled={isLoading}>
+                <Waves className="mr-2 h-4 w-4" />
+                {getAcousticButtonText()}
+              </Button>
+            </div>
           </form>
         </Form>
       </CardContent>
     </Card>
   );
 }
+
+    
