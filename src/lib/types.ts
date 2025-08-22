@@ -1,4 +1,5 @@
 
+
 export interface CircuitConfig {
   num_qubits: number;
   depth: number;
@@ -10,13 +11,13 @@ export interface CircuitConfig {
 
 export interface ReferenceState {
   mean: number[];
-  covariance: number[] | null;
+  covariance: number[][];
   initialized: boolean;
 }
 
 export interface AudioPayload {
   pcmData: number[];
-  rawData: number[];
+  rawData: Uint8Array;
 }
 
 export interface SimulationResults {
@@ -31,6 +32,8 @@ export interface SimulationResults {
     most_frequent_state: number;
     number_of_unique_states: number;
     distribution_uniformity: number;
+    mahalanobis_distance: number;
+    spectral_flux: number;
   };
   logs: string[];
   referenceState?: ReferenceState;

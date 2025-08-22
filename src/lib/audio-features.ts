@@ -217,6 +217,33 @@ export function extractFeaturesFromMagnitudes(magnitudes: number[]): number[] {
     return featureVector;
 }
 
+// Dummy functions to be replaced with real implementations
+export const extractMLFeatures = (magnitudes: number[], rawData: Uint8Array, previousAmplitudes: number[], sampleRate: number): number[] => {
+    const features: number[] = new Array(FEATURE_VECTOR_SIZE).fill(0);
+    // Placeholder: Just use magnitudes for now.
+    const extracted = extractFeaturesFromMagnitudes(magnitudes);
+    for(let i=0; i < Math.min(features.length, extracted.length); i++) {
+        features[i] = extracted[i];
+    }
+    return features;
+};
+
+export const calculateMahalanobisDistance = (features: number[], referenceState: { mean: number[], covariance: number[][], initialized: boolean }): number => {
+    if (!referenceState.initialized) return 0;
+    
+    const diff = features.map((feat, i) => feat - referenceState.mean[i]);
+    
+    // Using diagonal of covariance for simplicity. For a full implementation, matrix inversion is needed.
+    const diagCovariance = referenceState.covariance.map((row, i) => row[i]);
+    
+    const distance = diff.reduce((acc, val, i) => {
+        const variance = diagCovariance[i];
+        return acc + (val * val) / (variance > 0 ? variance : 1e-6); // Avoid division by zero
+    }, 0);
+    
+    return Math.sqrt(distance);
+};
+
 
 // Inicializar base de datos al cargar
 initializeQuantumDatabase();

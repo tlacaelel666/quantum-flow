@@ -21,27 +21,32 @@ export default function QuantumFlowPage() {
   const [isCalibrating, setIsCalibrating] = useState(false);
   const referenceState = useRef<ReferenceState>({
       mean: Array(FEATURE_VECTOR_SIZE).fill(0),
-      covariance: Array(FEATURE_VECTOR_SIZE).fill(0),
+      covariance: Array(FEATURE_VECTOR_SIZE).fill(0).map(() => Array(FEATURE_VECTOR_SIZE).fill(0)),
       initialized: false,
   });
 
   const handleSimulate = async (config: CircuitConfig, audioPayload?: AudioPayload, refState?: ReferenceState) => {
     setIsSimulating(true);
-    setSimulationResults(null);
+    // Only clear previous results if it's not a calibration run
+    if (!refState || refState.initialized) {
+        setSimulationResults(null);
+    }
     setAiAnalysis(null);
+    
     try {
       const results = await getSimulation(config, audioPayload, refState);
-      setSimulationResults(results);
-      if (config.circuit_type === 'acoustic') {
-        if (refState && !refState.initialized) {
-          if (results.referenceState) {
-              referenceState.current = results.referenceState;
-              toast({
-                title: "Calibración Completa",
-                description: `El perfil de ruido de fondo ha sido creado. Ahora puedes grabar para simular.`,
-              });
-          }
-        } else {
+      
+      // If a reference state was returned, it was a calibration run.
+      if (results.referenceState) {
+        referenceState.current = results.referenceState;
+        toast({
+          title: "Calibración Completa",
+          description: `El perfil de ruido de fondo ha sido creado. Ahora puedes grabar para simular.`,
+        });
+      } else {
+        // This was a regular simulation run.
+        setSimulationResults(results);
+        if (config.circuit_type === 'acoustic') {
            toast({
             title: "Simulación Acústica Completa",
             description: `El circuito se inicializó con datos de audio.`,
@@ -94,7 +99,10 @@ export default function QuantumFlowPage() {
             source.disconnect();
             processor.disconnect();
             stream.getTracks().forEach(track => track.stop());
-            const rawData = pcmData.slice(); // a copy for raw data analysis
+            const rawData = new Uint8Array(pcmData.length);
+            for (let i = 0; i < pcmData.length; i++) {
+              rawData[i] = Math.max(0, Math.min(255, (pcmData[i] + 1) * 127.5));
+            }
             setTimeout(() => audioContext.close(), 500);
             resolve({ pcmData, rawData });
         }, 2000); // Record for 2 seconds
@@ -112,7 +120,8 @@ export default function QuantumFlowPage() {
         const audioPayload = await captureAudio();
         setIsCalibrating(false);
         toast({ title: "Procesando Calibración..."});
-        await handleSimulate(config, audioPayload, referenceState.current);
+        // Pass a non-initialized reference state to signal a calibration run
+        await handleSimulate(config, audioPayload, { ...referenceState.current, initialized: false });
     } catch(error) {
         console.error("Error during calibration:", error);
         toast({
@@ -135,6 +144,7 @@ export default function QuantumFlowPage() {
         const audioPayload = await captureAudio();
         setIsRecording(false);
         toast({ title: "Procesando simulación acústica..." });
+        // Pass the fully initialized reference state for the main simulation
         await handleSimulate(config, audioPayload, referenceState.current);
     } catch (error) {
         console.error("Error capturing audio:", error);
