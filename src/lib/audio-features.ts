@@ -1,25 +1,25 @@
-// Base de datos de referencia para FFT cuántica con 32 características de amplitudes de onda de presión
 
+// Base de datos de referencia para FFT cuántica con 32 características de amplitudes de onda de presión
 export const FEATURE_VECTOR_SIZE = 32;
 
-export interface Complex {
-  real: number;
-  imaginary: number;
-}
-
-export interface QuantumState {
+interface QuantumState {
   amplitude: number;      // Amplitud normalizada [0,1]
   phase: number;         // Fase en radianes [0, 2π]
   qubit_state: string;   // Estado de 5 qubits (32 combinaciones posibles)
   frequency_bin: number; // Bin de frecuencia correspondiente
 }
 
-export interface PressureWaveFeatures {
+interface PressureWaveFeatures {
   // 32 características fundamentales de amplitudes de onda de presión
   features: number[];                    // Vector de 32 características
   quantum_states: QuantumState[];        // 32 estados cuánticos base
   fft_coefficients: Complex[];           // Coeficientes FFT complejos
   coherence_matrix: number[][];          // Matriz de coherencia 32x32
+}
+
+interface Complex {
+  real: number;
+  imaginary: number;
 }
 
 // Función para convertir amplitud de presión a estado cuántico
@@ -180,7 +180,7 @@ export function findSimilarPattern(inputFeatures: number[]): {
     }
     
     if (normA === 0 || normB === 0) {
-      return;
+      return; // O asigna una similitud de 0 si prefieres
     }
 
     const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
@@ -193,6 +193,7 @@ export function findSimilarPattern(inputFeatures: number[]): {
   
   return { pattern: bestMatch, similarity: bestSimilarity };
 }
+
 
 // Función de utilidad para extraer características de las magnitudes de audio
 export function extractFeaturesFromMagnitudes(magnitudes: number[]): number[] {
@@ -247,3 +248,5 @@ export const calculateMahalanobisDistance = (features: number[], referenceState:
 
 // Inicializar base de datos al cargar
 initializeQuantumDatabase();
+
+    
