@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
   title: 'Quantum Flow',
-  description: 'QUOREMIND Cirq CLI - Quantum Circuit Simulator',
+  description: 'QuoreMind - Quantum States Preparation Base',
 };
 
 export default function RootLayout({
