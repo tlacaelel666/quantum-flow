@@ -1,4 +1,3 @@
-
 // Base de datos de referencia para FFT cuántica con 32 características de amplitudes de onda de presión
 export const FEATURE_VECTOR_SIZE = 32;
 
@@ -178,9 +177,9 @@ export function findSimilarPattern(inputFeatures: number[]): {
       normA += inputFeatures[i] * inputFeatures[i];
       normB += pattern.features[i] * pattern.features[i];
     }
-    
+
     if (normA === 0 || normB === 0) {
-      return; // O asigna una similitud de 0 si prefieres
+      return; 
     }
 
     const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
@@ -239,7 +238,8 @@ export const calculateMahalanobisDistance = (features: number[], referenceState:
     
     const distance = diff.reduce((acc, val, i) => {
         const variance = diagCovariance[i];
-        return acc + (val * val) / (variance > 0 ? variance : 1e-6); // Avoid division by zero
+        // Add epsilon to variance to avoid division by zero
+        return acc + (val * val) / (variance > 1e-9 ? variance : 1e-9);
     }, 0);
     
     return Math.sqrt(distance);
