@@ -1,12 +1,36 @@
 
 import type { CircuitConfig, SimulationResults, ReferenceState, AudioPayload } from './types';
 import FFT from 'fft.js';
-import { extractFeaturesFromMagnitudes, findSimilarPattern, extractMLFeatures, calculateMahalanobisDistance, FEATURE_VECTOR_SIZE } from './audio-features';
+import { extractFeaturesFromMagnitudes, findSimilarPattern, extractMLFeatures,  FEATURE_VECTOR_SIZE } from './audio-features';
 
+// Variables globales para mantener estado entre mediciones
 let previousAmplitudes: number[] = [];
+let previousQuantumStates: number[] = [];
+let measurementHistory: Array<{features: number[], timestamp: number}> = [];
 
-function _calculate_statistics(counts: Record<number, number>, shots: number) {
+interface QuantumStatistics {
+  entropy: number;
+  most_frequent_state: number;
+  number_of_unique_states: number;
+  distribution_uniformity: number;
+  mahalanobis_distance: number;
+  spectral_flux: number;
+  coherence_measure: number;
+  quantum_fidelity: number;
+  von_neumann_entropy: number;
+  state_purity: number;
+}
+
+// Función mejorada para calcular estadísticas cuánticas
+function calculateQuantumStatistics(
+  counts: Record<number, number>, 
+  shots: number,
+  currentFeatures: number[] = [],
+  quantumAmplitudes: number[] = []
+): QuantumStatistics {
+  
   const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
+  
   if (total === 0) {
     return {
       entropy: 0,
@@ -15,24 +39,326 @@ function _calculate_statistics(counts: Record<number, number>, shots: number) {
       distribution_uniformity: 0,
       mahalanobis_distance: 0,
       spectral_flux: 0,
+      coherence_measure: 0,
+      quantum_fidelity: 1,
+      von_neumann_entropy: 0,
+      state_purity: 1
     };
   }
+
+  // Calcular probabilidades normalizadas
   const probabilities = Object.fromEntries(
-    Object.entries(counts).map(([k, v]) => [k, v / total])
+    Object.entries(counts).map(([k, v]) => [parseInt(k), v / total])
   );
-  
-  const entropy = -Object.values(probabilities).reduce((sum, p) => sum + (p > 0 ? p * Math.log2(p) : 0), 0);
-  
-  const most_frequent_entry = Object.entries(counts).reduce((max, entry) => "[0, 0]".includes(entry[0]) ? max : entry[1] > max[1] ? entry : max, ["0", 0]);
-  
+
+  // 1. Entropía de Shannon clásica
+  const shannonEntropy = -Object.values(probabilities).reduce(
+    (sum, p) => sum + (p > 0 ? p * Math.log2(p) : 0), 
+    0
+  );
+
+  // 2. Estado más frecuente (excluyendo estado |00000⟩)
+  const validStates = Object.entries(counts).filter(([state, _]) => parseInt(state) !== 0);
+  const mostFrequentEntry = validStates.length > 0 
+    ? validStates.reduce((max, entry) => entry[1] > max[1] ? entry : max, validStates[0])
+    : ["0", 0];
+
+  // 3. Número de estados únicos
   const numUniqueStates = Object.keys(counts).length;
+
+  // 4. Uniformidad de distribución
+  const maxEntropy = Math.log2(Math.max(numUniqueStates, 1));
+  const distributionUniformity = maxEntropy > 0 ? shannonEntropy / maxEntropy : 1;
+
+  // 5. Distancia de Mahalanobis mejorada
+  const mahalanobisDistance = calculateMahalanobisDistance(currentFeatures, measurementHistory);
+
+  // 6. Flujo espectral mejorado
+  const spectralFlux = calculateEnhancedSpectralFlux(currentFeatures, previousAmplitudes);
+
+  // 7. Medida de coherencia cuántica
+  const coherenceMeasure = calculateQuantumCoherence(quantumAmplitudes, probabilities);
+
+  // 8. Fidelidad cuántica
+  const quantumFidelity = calculateQuantumFidelity(quantumAmplitudes, previousQuantumStates);
+
+  // 9. Entropía de von Neumann
+  const vonNeumannEntropy = calculateVonNeumannEntropy(quantumAmplitudes);
+
+  // 10. Pureza del estado cuántico
+  const statePurity = calculateStatePurity(quantumAmplitudes);
+
+  // Actualizar historial
+  updateMeasurementHistory(currentFeatures, quantumAmplitudes);
+
   return {
-    entropy: entropy,
-    most_frequent_state: Number(most_frequent_entry[0]),
+    entropy: shannonEntropy,
+    most_frequent_state: parseInt("mostFrequentEntry[0]"),
     number_of_unique_states: numUniqueStates,
-    distribution_uniformity: numUniqueStates > 1 ? entropy / Math.log2(numUniqueStates) : 1,
-    mahalanobis_distance: 0, // Placeholder, calculated in acoustic sim
-    spectral_flux: 0, // Placeholder, calculated in acoustic sim
+    distribution_uniformity: distributionUniformity,
+    mahalanobis_distance: mahalanobisDistance,
+    spectral_flux: spectralFlux,
+    coherence_measure: coherenceMeasure,
+    quantum_fidelity: quantumFidelity,
+    von_neumann_entropy: vonNeumannEntropy,
+    state_purity: statePurity
+  };
+}
+
+// Calcular distancia de Mahalanobis con respecto al historial
+function calculateMahalanobisDistance(
+  currentFeatures: number[], 
+  history: Array<{features: number[], timestamp: number}>
+): number {
+  if (history.length < 2 || currentFeatures.length === 0) {
+    return 0;
+  }
+
+  const recentHistory = history.slice(-10); // Usar últimas 10 mediciones
+  const n = recentHistory.length;
+  const d = currentFeatures.length;
+
+  // Calcular media histórica
+  const mean = new Array(d).fill(0);
+  for (const entry of recentHistory) {
+    for (let i = 0; i < Math.min(d, entry.features.length); i++) {
+      mean[i] += entry.features[i];
+    }
+  }
+  for (let i = 0; i < d; i++) {
+    mean[i] /= n;
+  }
+
+  // Calcular matriz de covarianza
+  const covariance = Array(d).fill(null).map(() => Array(d).fill(0));
+  for (const entry of recentHistory) {
+    for (let i = 0; i < d; i++) {
+      for (let j = 0; j < d; j++) {
+        const di = (entry.features[i] || 0) - mean[i];
+        const dj = (entry.features[j] || 0) - mean[j];
+        covariance[i][j] += di * dj;
+      }
+    }
+  }
+  
+  // Normalizar covarianza
+  for (let i = 0; i < d; i++) {
+    for (let j = 0; j < d; j++) {
+      covariance[i][j] /= (n - 1);
+    }
+  }
+
+  // Calcular distancia de Mahalanobis (aproximación diagonal)
+  const diff = currentFeatures.map((val, i) => val - mean[i]);
+  let distance = 0;
+  for (let i = 0; i < d; i++) {
+    const variance = covariance[i][i] + 1e-10; // Evitar división por cero
+    distance += (diff[i] * diff[i]) / variance;
+  }
+
+  return Math.sqrt(distance);
+}
+
+// Calcular flujo espectral mejorado
+function calculateEnhancedSpectralFlux(
+  currentFeatures: number[], 
+  previousFeatures: number[]
+): number {
+  if (previousFeatures.length === 0 || currentFeatures.length === 0) {
+    return 0;
+  }
+
+  const minLength = Math.min(currentFeatures.length, previousFeatures.length);
+  let flux = 0;
+  let totalEnergy = 0;
+
+  for (let i = 0; i < minLength; i++) {
+    const current = currentFeatures[i] || 0;
+    const previous = previousFeatures[i] || 0;
+    const diff = current - previous;
+    
+    // Solo considerar aumentos de energía (modelo psychoacoustic)
+    if (diff > 0) {
+      flux += diff * diff;
+    }
+    totalEnergy += current * current;
+  }
+
+  // Normalizar por energía total
+  return totalEnergy > 0 ? Math.sqrt(flux) / Math.sqrt(totalEnergy) : 0;
+}
+
+// Calcular coherencia cuántica
+function calculateQuantumCoherence(
+  amplitudes: number[], 
+  probabilities: Record<number, number>
+): number {
+  if (amplitudes.length < 2) return 0;
+
+  // Coherencia basada en superposición de estados
+  let coherenceSum = 0;
+  let normalizationSum = 0;
+
+  for (let i = 0; i < amplitudes.length - 1; i++) {
+    for (let j = i + 1; j < amplitudes.length; j++) {
+      const amp_i = amplitudes[i] || 0;
+      const amp_j = amplitudes[j] || 0;
+      
+      // Término de interferencia cuántica
+      const interference = 2 * amp_i * amp_j;
+      coherenceSum += Math.abs(interference);
+      normalizationSum += amp_i * amp_i + amp_j * amp_j;
+    }
+  }
+
+  return normalizationSum > 0 ? coherenceSum / normalizationSum : 0;
+}
+
+// Calcular fidelidad cuántica entre estados
+function calculateQuantumFidelity(
+  currentAmplitudes: number[], 
+  previousAmplitudes: number[]
+): number {
+  if (previousAmplitudes.length === 0 || currentAmplitudes.length === 0) {
+    return 1;
+  }
+
+  const minLength = Math.min(currentAmplitudes.length, previousAmplitudes.length);
+  let overlapReal = 0;
+  let norm1 = 0;
+  let norm2 = 0;
+
+  for (let i = 0; i < minLength; i++) {
+    const amp1 = currentAmplitudes[i] || 0;
+    const amp2 = previousAmplitudes[i] || 0;
+    
+    overlapReal += amp1 * amp2; // Producto escalar
+    norm1 += amp1 * amp1;
+    norm2 += amp2 * amp2;
+  }
+
+  const normProduct = Math.sqrt(norm1 * norm2);
+  return normProduct > 0 ? Math.abs(overlapReal) / normProduct : 1;
+}
+
+// Calcular entropía de von Neumann
+function calculateVonNeumannEntropy(amplitudes: number[]): number {
+  if (amplitudes.length === 0) return 0;
+
+  // Calcular eigenvalores de la matriz densidad (aproximación diagonal)
+  const eigenvalues = amplitudes.map(amp => amp * amp);
+  const totalProb = eigenvalues.reduce((sum, val) => sum + val, 0);
+  
+  if (totalProb === 0) return 0;
+
+  // Normalizar
+  const normalizedEigenvalues = eigenvalues.map(val => val / totalProb);
+
+  // Calcular entropía de von Neumann: -Tr(ρ log ρ)
+  return -normalizedEigenvalues.reduce((sum, lambda) => {
+    return sum + (lambda > 0 ? lambda * Math.log2(lambda) : 0);
+  }, 0);
+}
+
+// Calcular pureza del estado
+function calculateStatePurity(amplitudes: number[]): number {
+  if (amplitudes.length === 0) return 1;
+
+  // Pureza = Tr(ρ²)
+  const probabilities = amplitudes.map(amp => amp * amp);
+  const totalProb = probabilities.reduce((sum, val) => sum + val, 0);
+  
+  if (totalProb === 0) return 1;
+
+  const normalizedProbs = probabilities.map(p => p / totalProb);
+  const purity = normalizedProbs.reduce((sum, p) => sum + p * p, 0);
+
+  return purity;
+}
+
+// Actualizar historial de mediciones
+function updateMeasurementHistory(
+  currentFeatures: number[], 
+  quantumAmplitudes: number[]
+): void {
+  const timestamp = Date.now();
+  
+  measurementHistory.push({
+    features: [...currentFeatures],
+    timestamp: timestamp
+  });
+
+  // Mantener solo las últimas 20 mediciones
+  if (measurementHistory.length > 20) {
+    measurementHistory.shift();
+  }
+
+  // Actualizar estados previos
+  previousAmplitudes = [...currentFeatures];
+  previousQuantumStates = [...quantumAmplitudes];
+}
+
+// Función principal exportada (reemplaza la función original)
+export function calculateStatistics(
+  counts: Record<number, number>, 
+  shots: number,
+  currentFeatures: number[] = [],
+  quantumAmplitudes: number[] = []
+): QuantumStatistics {
+  return calculateQuantumStatistics(counts, shots, currentFeatures, quantumAmplitudes);
+}
+
+// Función para reiniciar el historial
+export function resetMeasurementHistory(): void {
+  previousAmplitudes = [];
+  previousQuantumStates = [];
+  measurementHistory = [];
+}
+
+// Función para obtener estadísticas del historial
+export function getHistoryStatistics(): {
+  totalMeasurements: number;
+  averageFeatures: number[];
+  featureVariance: number[];
+} {
+  if (measurementHistory.length === 0) {
+    return {
+      totalMeasurements: 0,
+      averageFeatures: [],
+      featureVariance: []
+    };
+  }
+
+  const n = measurementHistory.length;
+  const featureLength = measurementHistory[0].features.length;
+  
+  // Calcular promedios
+  const averageFeatures = new Array(featureLength).fill(0);
+  for (const entry of measurementHistory) {
+    for (let i = 0; i < featureLength; i++) {
+      averageFeatures[i] += entry.features[i] || 0;
+    }
+  }
+  for (let i = 0; i < featureLength; i++) {
+    averageFeatures[i] /= n;
+  }
+
+  // Calcular varianzas
+  const featureVariance = new Array(featureLength).fill(0);
+  for (const entry of measurementHistory) {
+    for (let i = 0; i < featureLength; i++) {
+      const diff = (entry.features[i] || 0) - averageFeatures[i];
+      featureVariance[i] += diff * diff;
+    }
+  }
+  for (let i = 0; i < featureLength; i++) {
+    featureVariance[i] /= n;
+  }
+
+  return {
+    totalMeasurements: n,
+    averageFeatures,
+    featureVariance
   };
 }
 
@@ -117,8 +443,8 @@ async function _runAcousticProcessing(
     }
 
     // This is a simulation run, use the reference state
-    const mahalanobis_distance = calculateMahalanobisDistance(features, referenceState);
-    logs.push(`[DATA] Mahalanobis Distance: ${mahalanobis_distance.toFixed(4)}`);
+    const mahalanobis_distance = calculateMahalanobisDistance;
+    logs.push(`[DATA] Mahalanobis Distance: ${mahalanobis_distance}`);
     
     const spectral_flux = features[2]; // Index 2 is spectral flux from extractMLFeatures
     logs.push(`[DATA] Spectral Flux: ${spectral_flux.toFixed(4)}`);
@@ -147,7 +473,7 @@ async function _runAcousticProcessing(
 
     previousAmplitudes = magnitudes; // Update for next flux calculation
 
-    return { initialState, mahalanobis_distance, spectral_flux };
+    return { initialState, spectral_flux };
 }
 
 
@@ -170,7 +496,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
         ...config,
         counts: {},
         circuit_depth: 0,
-        statistics: _calculate_statistics({}, 0),
+        statistics: calculateStatistics({}, 0),
         logs,
         referenceState: acousticResult.newReferenceState,
       };
@@ -193,7 +519,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
     
     const final_counts = _normalizeCounts(counts, config.shots);
     const stats = {
-      ..._calculate_statistics(final_counts, config.shots),
+      ...calculateQuantumStatistics(final_counts, config.shots),
       mahalanobis_distance: mahalanobis_distance ?? 0,
       spectral_flux: spectral_flux ?? 0,
     };
@@ -266,7 +592,7 @@ export async function runSimulation(config: CircuitConfig, audioPayload?: AudioP
   }
   
   const final_counts = _normalizeCounts(counts, config.shots);
-  const stats = _calculate_statistics(final_counts, config.shots);
+  const stats = calculateStatistics(final_counts, config.shots);
   logs.push(`[SUCCESS] Simulation complete. Most frequent state: ${stats.most_frequent_state}.`);
 
   return {
