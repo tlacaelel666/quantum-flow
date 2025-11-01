@@ -18,7 +18,7 @@ env:
 
   - variable: API_KEY
     secret: myApiKeySecret
-    value: AIzaSyC2iLlZiLwcEM48ipF2s5GJ1cjstN1eL9g
+    value: myApiKeyValue
 
     # Same as API_KEY above but with a pinned version.
   - variable: PINNED_API_KEY
